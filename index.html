@@ -264,7 +264,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
   var REGION_LABELS = {west:'West', central:'Central', southeast:'Southeast', northeast:'Northeast'};
   var DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   var BASE_BA_TYPES = ['Content Creator','Event Organizer','Photographer','Affiliate Marketer','Adidas Brand Ambassadors','Eleven Brand Ambassadors'];
-  var PAGES = ['home','apply','schedules','leaderboard','policies'];
+  var PAGES = ['home','apply','schedules','leaderboard','policies','credits'];
   var CITY_COORDS = {
     'bay area':[-122.27,37.87],'san francisco':[-122.42,37.77],'los angeles':[-118.24,34.05],'san diego':[-117.16,32.72],
     'phoenix':[-112.07,33.45],'sacramento':[-121.49,38.58],'seattle':[-122.33,47.61],'portland':[-122.68,45.52],
@@ -357,6 +357,8 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     baTypeOptions: [],
     applications: [],
     policies: [],
+    creditHistory: [],
+    usageHistory: [],
     schedule: {weekLabel:'This week', days: DAYS, assignments: {}}
   };
   var LOADED = {regions:false, members:false, schedule:false, baTypes:false, policies:false};
@@ -366,6 +368,8 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
   var PRIVATE_UNSUB = null;
   var AUDIT_UNSUB = null;
   var APPLICATIONS_UNSUB = null;
+  var CREDIT_HISTORY_UNSUB = null;
+  var USAGE_HISTORY_UNSUB = null;
   var BOOTSTRAPPED_TYPES = false;
 
   var FILTERS = {roles:[], regions:[], baTypes:[], agreement:'any', credits:'any', minEvents:0, showInactive:false, q:''};
@@ -373,7 +377,9 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     page: pageFromHash(), selectedId:null, adding:false, editingId:null, auditOpen:false,
     filterPanelOpen:false, formBaTypes:[], pendingNewTypes:[],
     applySubmitted:false, addingPolicy:false, editingPolicyId:null,
-    saving:false, seeding:false, importing:false, importOpen:false, importRows:null, importError:'', error:'', authError:''
+    saving:false, seeding:false, importing:false, importOpen:false, importRows:null, importError:'', error:'', authError:'',
+    creditImportOpen:false, creditImportRows:null, creditImportUnmatched:null, creditImportMonth:'', creditImportExpiration:'', creditImportError:'', creditImporting:false,
+    usageImportOpen:false, usageImportRows:null, usageImportUnmatched:null, usageImportMonth:'', usageImportError:'', usageImporting:false
   };
   window.addEventListener('hashchange', function(){
     UI.page = pageFromHash(); UI.selectedId = null; UI.error = ''; UI.formBaTypes = []; UI.filterPanelOpen = false;
@@ -405,10 +411,14 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     if(PRIVATE_UNSUB){ PRIVATE_UNSUB(); PRIVATE_UNSUB = null; }
     if(AUDIT_UNSUB){ AUDIT_UNSUB(); AUDIT_UNSUB = null; }
     if(APPLICATIONS_UNSUB){ APPLICATIONS_UNSUB(); APPLICATIONS_UNSUB = null; }
+    if(CREDIT_HISTORY_UNSUB){ CREDIT_HISTORY_UNSUB(); CREDIT_HISTORY_UNSUB = null; }
+    if(USAGE_HISTORY_UNSUB){ USAGE_HISTORY_UNSUB(); USAGE_HISTORY_UNSUB = null; }
     LOADED.schedule = false;
     STATE.membersPrivate = {};
     STATE.auditLog = [];
     STATE.applications = [];
+    STATE.creditHistory = [];
+    STATE.usageHistory = [];
     if(IS_PLEI_USER && !BOOTSTRAPPED_TYPES){
       BOOTSTRAPPED_TYPES = true;
       db.collection('config').doc('baTypes').get().then(function(doc){
@@ -446,6 +456,18 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
         var next = [];
         snap.forEach(function(doc){ next.push(doc.data()); });
         STATE.auditLog = next;
+        render();
+      }, function(){ render(); });
+      CREDIT_HISTORY_UNSUB = db.collection('credit_history').onSnapshot(function(snap){
+        var next = [];
+        snap.forEach(function(doc){ next.push(doc.data()); });
+        STATE.creditHistory = next;
+        render();
+      }, function(){ render(); });
+      USAGE_HISTORY_UNSUB = db.collection('usage_history').onSnapshot(function(snap){
+        var next = [];
+        snap.forEach(function(doc){ next.push(doc.data()); });
+        STATE.usageHistory = next;
         render();
       }, function(){ render(); });
     } else {
@@ -654,6 +676,48 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     }).catch(function(){});
   }
 
+  function normalizePhone10(s){
+    return String(s||'').replace(/\D/g,'').slice(-10);
+  }
+  function pad2(n){ return n < 10 ? '0' + n : '' + n; }
+  var MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  function currentMonthKey(){
+    var d = new Date();
+    return d.getFullYear() + '-' + pad2(d.getMonth()+1);
+  }
+  function monthKeyLabel(key){
+    if(!key) return '';
+    var parts = String(key).split('-'); var y = parseInt(parts[0],10), m = parseInt(parts[1],10);
+    if(!y || !m) return String(key);
+    return MONTH_NAMES[m-1] + ' ' + y;
+  }
+  function monthKeyFromExpiration(expStr){
+    var mm, yy;
+    var m1 = String(expStr||'').match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    var m2 = !m1 && String(expStr||'').match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+    if(m1){ mm = parseInt(m1[1],10); yy = parseInt(m1[3],10); }
+    else if(m2){ mm = parseInt(m2[2],10); yy = parseInt(m2[1],10); }
+    else return currentMonthKey();
+    mm -= 1; if(mm < 1){ mm = 12; yy -= 1; }
+    return yy + '-' + pad2(mm);
+  }
+  function nextMonthFirstDateStr(){
+    var d = new Date();
+    var mm = d.getMonth() + 2; var yy = d.getFullYear();
+    if(mm > 12){ mm -= 12; yy += 1; }
+    return pad2(mm) + '/01/' + yy;
+  }
+  function monthOptionsList(){
+    var out = []; var d = new Date();
+    for(var i=0;i<6;i++){
+      var yy = d.getFullYear(), mm = d.getMonth()+1 - i;
+      while(mm < 1){ mm += 12; yy -= 1; }
+      var key = yy + '-' + pad2(mm);
+      out.push({key: key, label: monthKeyLabel(key)});
+    }
+    return out;
+  }
+
   function csvEscape(v){
     var s = String(v == null ? '' : v);
     if(/[",\n]/.test(s)){ s = '"' + s.replace(/"/g, '""') + '"'; }
@@ -678,6 +742,167 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     a.href = url; a.download = 'plei-ambassadors-' + (new Date().toISOString().slice(0,10)) + '.csv';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  }
+
+  function parseCreditsCSV(text){
+    var rows = parseCSV(text);
+    if(!rows.length) return {matched:[], unmatched:[], monthKey:'', error:'That file looks empty.'};
+    var header = rows[0].map(function(h){ return String(h||'').trim().toLowerCase(); });
+    function col(name){ return header.indexOf(name); }
+    var idx = {
+      phone: col('phone number'), amount: col('credit amount'), category: col('category'),
+      reason: col('reason'), expiration: col('expiration date')
+    };
+    if(idx.phone === -1 || idx.amount === -1){ return {matched:[], unmatched:[], monthKey:'', error:'Could not find "Phone Number" and "Credit Amount" columns in that file.'}; }
+    var byPhone = {};
+    STATE.members.forEach(function(m){
+      var priv = STATE.membersPrivate[m.id] || {};
+      var key = normalizePhone10(priv.phone);
+      if(key) byPhone[key] = m;
+    });
+    var matched = [], unmatched = [], expirationSeen = '';
+    for(var r=1; r<rows.length; r++){
+      var row = rows[r];
+      var phoneRaw = ((idx.phone !== -1 ? row[idx.phone] : '') || '').trim();
+      var key = normalizePhone10(phoneRaw);
+      if(!key) continue;
+      var amt = parseFloat(idx.amount !== -1 ? row[idx.amount] : '') || 0;
+      var category = ((idx.category !== -1 ? row[idx.category] : '') || '').trim();
+      var reason = ((idx.reason !== -1 ? row[idx.reason] : '') || '').trim();
+      var expiration = ((idx.expiration !== -1 ? row[idx.expiration] : '') || '').trim();
+      if(expiration) expirationSeen = expiration;
+      var member = byPhone[key];
+      if(member){
+        matched.push({memberId: member.id, name: member.name, phone: phoneRaw, amount: amt, category: category, reason: reason, expiration: expiration});
+      } else {
+        unmatched.push(phoneRaw);
+      }
+    }
+    var monthKey = expirationSeen ? monthKeyFromExpiration(expirationSeen) : currentMonthKey();
+    return {matched: matched, unmatched: unmatched, monthKey: monthKey, error: ''};
+  }
+
+  function importCredits(matched, monthKey){
+    UI.creditImporting = true; UI.creditImportError = ''; render();
+    var monthLabel = monthKeyLabel(monthKey);
+    var batch = db.batch();
+    matched.forEach(function(row){
+      batch.set(db.collection('members_private').doc(row.memberId), {
+        gameCreditAmount: row.amount, gameCreditCategory: row.category, gameCreditReason: row.reason,
+        gameCreditExpiration: row.expiration, gameCreditMonth: monthLabel
+      }, {merge:true});
+    });
+    batch.commit().then(function(){
+      logAudit('import-credits', '', '', 'imported credits for ' + matched.length + ' ambassadors (' + monthLabel + ')');
+      UI.creditImporting = false; UI.creditImportOpen = false; UI.creditImportRows = null; UI.creditImportUnmatched = null; render();
+    }).catch(function(err){
+      UI.creditImporting = false;
+      UI.creditImportError = (err && err.code === 'permission-denied') ? 'You do not have permission to import — sign in with your @plei.com account.' : 'Import failed — please try again.';
+      render();
+    });
+  }
+
+  function exportNextCreditsCSV(){
+    var monthKey = currentMonthKey();
+    var monthLabel = monthKeyLabel(monthKey);
+    var expiration = nextMonthFirstDateStr();
+    var active = STATE.members.filter(function(m){ return m.status !== 'inactive'; });
+    var rows = []; var batch = db.batch(); var historyCount = 0;
+    active.forEach(function(m){
+      var priv = STATE.membersPrivate[m.id] || {};
+      var amt = priv.gameCreditAmount;
+      if(amt == null || amt <= 0) return;
+      rows.push([priv.phone||'', amt, priv.gameCreditCategory||'', priv.gameCreditReason||'', expiration]);
+      batch.set(db.collection('credit_history').doc(m.id + '_' + monthKey), {
+        memberId: m.id, memberName: m.name, month: monthKey, monthLabel: monthLabel,
+        amount: amt, category: priv.gameCreditCategory||'', reason: priv.gameCreditReason||'',
+        expiration: expiration, recordedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }, {merge:true});
+      historyCount++;
+    });
+    if(!rows.length){ UI.error = 'No one currently has game credits to export.'; render(); return; }
+    var lines = [['Phone Number','Credit Amount','Category','Reason','Expiration Date'].map(csvEscape).join(',')];
+    rows.forEach(function(r){ lines.push(r.map(csvEscape).join(',')); });
+    var blob = new Blob([lines.join('\n')], {type:'text/csv;charset=utf-8;'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = 'plei-game-credits-' + monthKey + '.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+    batch.commit().then(function(){
+      logAudit('export-credits', '', '', 'generated the ' + monthLabel + ' Plei credits feed (' + historyCount + ' ambassadors, expires ' + expiration + ')');
+      render();
+    }).catch(function(){ render(); });
+  }
+
+  function parseUsageCSV(text){
+    var rows = parseCSV(text);
+    if(!rows.length) return {matched:[], unmatched:[], error:'That file looks empty.'};
+    var header = rows[0].map(function(h){ return String(h||'').trim().toLowerCase(); });
+    function col(name){ return header.indexOf(name); }
+    var idx = {
+      phone: col('phone'), creditsExpired: col('credits expired'), creditsLeft: col('credits left'),
+      reqGames: col('required captain games'), reqSpend: col('required captain spend'),
+      notReqGames: col('not required games'), notReqSpend: col('not required spend'),
+      lastPlayed: col('last game played'), gamesPlayed: col('games played')
+    };
+    if(idx.phone === -1){ return {matched:[], unmatched:[], error:'Could not find a "Phone" column in that file.'}; }
+    var byPhone = {};
+    STATE.members.forEach(function(m){
+      var priv = STATE.membersPrivate[m.id] || {};
+      var key = normalizePhone10(priv.phone);
+      if(key) byPhone[key] = m;
+    });
+    var num = function(v){ var n = parseFloat(v); return isNaN(n) ? 0 : n; };
+    var matched = [], unmatched = [];
+    for(var r=1; r<rows.length; r++){
+      var row = rows[r];
+      var phoneRaw = ((idx.phone !== -1 ? row[idx.phone] : '') || '').trim();
+      var key = normalizePhone10(phoneRaw);
+      if(!key) continue;
+      var member = byPhone[key];
+      var rec = {
+        memberId: member ? member.id : null, name: member ? member.name : '', phone: phoneRaw,
+        creditsExpired: num(idx.creditsExpired !== -1 ? row[idx.creditsExpired] : 0),
+        creditsLeft: num(idx.creditsLeft !== -1 ? row[idx.creditsLeft] : 0),
+        requiredCaptainGames: num(idx.reqGames !== -1 ? row[idx.reqGames] : 0),
+        requiredCaptainSpend: num(idx.reqSpend !== -1 ? row[idx.reqSpend] : 0),
+        notRequiredGames: num(idx.notReqGames !== -1 ? row[idx.notReqGames] : 0),
+        notRequiredSpend: num(idx.notReqSpend !== -1 ? row[idx.notReqSpend] : 0),
+        lastGamePlayed: ((idx.lastPlayed !== -1 ? row[idx.lastPlayed] : '') || '').trim(),
+        gamesPlayed: num(idx.gamesPlayed !== -1 ? row[idx.gamesPlayed] : 0)
+      };
+      if(member){ matched.push(rec); } else { unmatched.push(phoneRaw); }
+    }
+    return {matched: matched, unmatched: unmatched, error: ''};
+  }
+
+  function importUsage(matched, monthKey){
+    UI.usageImporting = true; UI.usageImportError = ''; render();
+    var monthLabel = monthKeyLabel(monthKey);
+    var batch = db.batch();
+    matched.forEach(function(row){
+      batch.set(db.collection('usage_history').doc(row.memberId + '_' + monthKey), {
+        memberId: row.memberId, memberName: row.name, month: monthKey, monthLabel: monthLabel,
+        creditsExpired: row.creditsExpired, creditsLeft: row.creditsLeft,
+        requiredCaptainGames: row.requiredCaptainGames, requiredCaptainSpend: row.requiredCaptainSpend,
+        notRequiredGames: row.notRequiredGames, notRequiredSpend: row.notRequiredSpend,
+        lastGamePlayed: row.lastGamePlayed, gamesPlayed: row.gamesPlayed,
+        recordedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }, {merge:true});
+      batch.set(db.collection('members_private').doc(row.memberId), {
+        usageCreditsLeft: row.creditsLeft, usageGamesPlayed: row.gamesPlayed,
+        usageLastGamePlayed: row.lastGamePlayed, usageMonth: monthLabel
+      }, {merge:true});
+    });
+    batch.commit().then(function(){
+      logAudit('import-usage', '', '', 'imported Hex usage for ' + matched.length + ' ambassadors (' + monthLabel + ')');
+      UI.usageImporting = false; UI.usageImportOpen = false; UI.usageImportRows = null; UI.usageImportUnmatched = null; render();
+    }).catch(function(err){
+      UI.usageImporting = false;
+      UI.usageImportError = (err && err.code === 'permission-denied') ? 'You do not have permission to import — sign in with your @plei.com account.' : 'Import failed — please try again.';
+      render();
+    });
   }
 
   function addBaType(tag){
@@ -832,6 +1057,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
       {key:'leaderboard', label:'Leaderboard'},
       {key:'policies', label:'Policies'}
     ];
+    if(IS_PLEI_USER) links.push({key:'credits', label:'Credits'});
     var html = links.map(function(l){
       return '<a class="nav-link' + (UI.page===l.key?' active':'') + '" href="#' + l.key + '">' + escapeHtml(l.label) + '</a>';
     }).join('');
@@ -1104,16 +1330,20 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
       var creditHtml = priv.gameCreditAmount != null ?
         '$' + priv.gameCreditAmount + (priv.gameCreditCategory ? ' — ' + escapeHtml(priv.gameCreditCategory) : '') + (priv.gameCreditReason ? ' (' + escapeHtml(priv.gameCreditReason) + ')' : '') +
         (priv.gameCreditMonth ? '<div class="log-meta">' + escapeHtml(priv.gameCreditMonth) + (priv.gameCreditExpiration ? ' · expires ' + escapeHtml(priv.gameCreditExpiration) : '') + '</div>' : '') : '';
+      var usageHtml = priv.usageMonth ?
+        (priv.usageGamesPlayed||0) + ' games played, $' + (priv.usageCreditsLeft!=null?priv.usageCreditsLeft:0) + ' credits left' +
+        '<div class="log-meta">' + escapeHtml(priv.usageMonth) + (priv.usageLastGamePlayed ? ' · last played ' + escapeHtml(priv.usageLastGamePlayed) : '') + '</div>' : '';
       var kv = [
         ['Phone', priv.phone], ['Email', priv.email], ['Mailing address', priv.mailingAddress],
         ['Work authorization', priv.workAuth], ['Instagram/TikTok', priv.instagram],
         ['Bib/ball inventory', priv.bibBallInventory],
         ['Agreement signed', priv.agreementSigned != null || priv.agreementLink ? agreementHtml : ''],
-        ['Game credits', creditHtml]
+        ['Game credits', creditHtml],
+        ['Game usage', usageHtml]
       ].filter(function(pair){ return pair[1]; });
       if(kv.length){
         contactBody = '<div class="section-label">Contact &amp; Admin</div>' +
-          kv.map(function(pair){ return '<div class="kv-row"><span class="k">' + pair[0] + '</span><span class="v">' + (pair[0]==='Agreement signed' || pair[0]==='Game credits' ? pair[1] : escapeHtml(pair[1])) + '</span></div>'; }).join('');
+          kv.map(function(pair){ return '<div class="kv-row"><span class="k">' + pair[0] + '</span><span class="v">' + (pair[0]==='Agreement signed' || pair[0]==='Game credits' || pair[0]==='Game usage' ? pair[1] : escapeHtml(pair[1])) + '</span></div>'; }).join('');
       }
     }
     var weekBody;
@@ -1199,6 +1429,9 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
               '<div class="form-field"><label>Bib/ball inventory</label><input id="f-inventory" type="text" value="' + escapeHtml(priv.bibBallInventory||'') + '"></div>' +
               '<div class="form-field"><label>Agreement signed</label><select id="f-agreement"><option value="yes"' + (priv.agreementSigned?' selected':'') + '>Yes</option><option value="no"' + (!priv.agreementSigned?' selected':'') + '>No</option></select></div>' +
               '<div class="form-field full"><label>Agreement link (Google Drive, Dropbox, etc.)</label><input id="f-agreement-link" type="text" placeholder="https://…" value="' + escapeHtml(priv.agreementLink||'') + '"></div>' +
+              '<div class="form-field"><label>Game credit amount ($)</label><input id="f-credit-amount" type="number" min="0" step="0.01" value="' + (priv.gameCreditAmount!=null?priv.gameCreditAmount:'') + '"></div>' +
+              '<div class="form-field"><label>Game credit category</label><input id="f-credit-category" type="text" value="' + escapeHtml(priv.gameCreditCategory||'') + '"></div>' +
+              '<div class="form-field full"><label>Game credit reason</label><input id="f-credit-reason" type="text" value="' + escapeHtml(priv.gameCreditReason||'') + '"></div>' +
             '</div>' +
             '<div class="modal-actions">' +
               '<button class="btn" data-action="save-member" data-value="' + (editing ? editing.id : '') + '">Save</button>' +
@@ -1239,7 +1472,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
 
   function renderAuditLog(){
     if(!UI.auditOpen) return '';
-    var actionLabel = {create:'added', update:'updated', delete:'removed', import:'ran a bulk import'};
+    var actionLabel = {create:'added', update:'updated', delete:'removed', import:'ran a bulk import', 'import-credits':'imported game credits', 'export-credits':'generated a monthly credits feed', 'import-usage':'imported Hex usage data'};
     var rows = (STATE.auditLog||[]).map(function(e){
       var when = (e.editedAt && e.editedAt.toDate) ? e.editedAt.toDate().toLocaleString() : 'just now';
       var label = actionLabel[e.action] || e.action;
@@ -1329,6 +1562,138 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
       (cards || '<div class="empty-note">No policies published yet.</div>');
   }
 
+  function renderCreditsPage(){
+    if(!IS_PLEI_USER){
+      return '<div class="page-header"><h1>Credits</h1></div>' +
+        '<div class="internal-note">Game credit tracking is visible to signed-in Plei team members.</div>';
+    }
+    var stats = computeStats();
+    var lifetimeTotal = 0;
+    var byMonth = {}; var byMember = {};
+    (STATE.creditHistory||[]).forEach(function(h){
+      lifetimeTotal += (h.amount||0);
+      byMonth[h.month] = byMonth[h.month] || {month: h.month, label: h.monthLabel || monthKeyLabel(h.month), total:0, count:0};
+      byMonth[h.month].total += (h.amount||0);
+      byMonth[h.month].count += 1;
+      byMember[h.memberId] = byMember[h.memberId] || {memberId: h.memberId, name: h.memberName, total:0};
+      byMember[h.memberId].total += (h.amount||0);
+    });
+    var months = Object.keys(byMonth).map(function(k){ return byMonth[k]; }).sort(function(a,b){ return b.month.localeCompare(a.month); });
+    var memberTotals = Object.keys(byMember).map(function(k){ return byMember[k]; }).sort(function(a,b){ return b.total - a.total; });
+    var tiles = [
+      {n: '$' + stats.totalCredits, label: stats.creditedCount + ' Ambassadors With Credits Now'},
+      {n: '$' + lifetimeTotal, label: 'Lifetime Credits Issued'},
+      {n: months.length, label: 'Months Tracked'}
+    ];
+    var statHtml = tiles.map(function(t){ return '<div class="stat-tile"><div class="stat-num tabular">' + t.n + '</div><div class="stat-label">' + t.label + '</div></div>'; }).join('');
+    var monthRows = months.map(function(mo){
+      return '<div class="leader-item"><span>' + escapeHtml(mo.label) + ' — ' + mo.count + ' ambassador' + (mo.count===1?'':'s') + '</span><span class="n tabular">$' + mo.total + '</span></div>';
+    }).join('');
+    var memberRows = memberTotals.slice(0,50).map(function(mm,i){
+      return '<div class="leader-item"><span><span class="rank">' + (i+1) + '.</span>' + escapeHtml(mm.name||mm.memberId) + '</span><span class="n tabular">$' + mm.total + '</span></div>';
+    }).join('');
+    var usageMonths = {};
+    (STATE.usageHistory||[]).forEach(function(u){ usageMonths[u.month] = true; });
+    var latestUsageMonth = Object.keys(usageMonths).sort().pop();
+    var usageRows = (STATE.usageHistory||[]).filter(function(u){ return u.month === latestUsageMonth; })
+      .sort(function(a,b){ return (b.gamesPlayed||0) - (a.gamesPlayed||0); })
+      .map(function(u){
+        return '<div class="leader-item"><span>' + escapeHtml(u.memberName||u.memberId) + '</span>' +
+          '<span class="n tabular">' + (u.gamesPlayed||0) + ' games · $' + (u.creditsLeft||0) + ' left</span></div>';
+      }).join('');
+    return '' +
+      '<div class="page-header"><h1>Credits</h1><p class="sub">Monthly free-game-credit cost, tracked per ambassador over time.</p></div>' +
+      '<div class="card card-pad" style="margin-bottom:24px;">' +
+        '<div class="stat-row" style="margin-top:0;">' + statHtml + '</div>' +
+        '<div class="modal-actions" style="margin-top:18px;">' +
+          '<button class="btn" data-action="generate-credits-export">Generate This Month\'s Plei Feed (CSV)</button>' +
+          '<button class="btn secondary" data-action="open-credit-import">Import Credits (CSV)</button>' +
+          '<button class="btn secondary" data-action="open-usage-import">Import Usage (Hex CSV)</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="card card-pad" style="margin-bottom:24px;">' +
+        '<div class="section-head" style="margin-bottom:4px;"><h2 style="font-size:16px;">Monthly History</h2></div>' +
+        '<div class="sub" style="margin-bottom:10px;">A snapshot is recorded each time you generate a monthly feed</div>' +
+        (monthRows || '<div class="empty-note">No monthly feed generated yet — click “Generate This Month\'s Plei Feed” once amounts are set.</div>') +
+      '</div>' +
+      '<div class="card card-pad" style="margin-bottom:24px;">' +
+        '<div class="section-head" style="margin-bottom:4px;"><h2 style="font-size:16px;">Usage — ' + escapeHtml(latestUsageMonth ? monthKeyLabel(latestUsageMonth) : 'No data yet') + '</h2></div>' +
+        '<div class="sub" style="margin-bottom:10px;">From your Hex Captain Rewards view — games played and credits remaining</div>' +
+        (usageRows || '<div class="empty-note">No usage imported yet — click “Import Usage (Hex CSV)” once you have an export.</div>') +
+      '</div>' +
+      '<div class="card card-pad">' +
+        '<div class="section-head" style="margin-bottom:4px;"><h2 style="font-size:16px;">Lifetime Cost Per Ambassador</h2></div>' +
+        '<div class="sub" style="margin-bottom:10px;">Total credits issued to date, across all recorded months</div>' +
+        (memberRows || '<div class="empty-note">No history recorded yet.</div>') +
+      '</div>';
+  }
+
+  function renderCreditImportModal(){
+    if(!UI.creditImportOpen) return '';
+    var body;
+    if(UI.creditImportRows){
+      var monthLabel = monthKeyLabel(UI.creditImportMonth);
+      var unmatchedHtml = (UI.creditImportUnmatched && UI.creditImportUnmatched.length) ?
+        '<div class="error-note">Not on the roster — no match for: ' + UI.creditImportUnmatched.map(escapeHtml).join(', ') + '</div>' : '';
+      var summary = UI.creditImportRows.length + ' ambassadors matched for ' + monthLabel + '.\nThis replaces each matched ambassador\'s current credit amount, category and reason — it does not touch the archived monthly history.';
+      body = '<div class="import-summary">' + escapeHtml(summary) + '</div>' +
+        unmatchedHtml +
+        '<div class="modal-actions">' +
+          '<button class="btn" data-action="confirm-credit-import"' + (UI.creditImporting?' disabled':'') + '>' + (UI.creditImporting ? 'Importing…' : 'Import ' + UI.creditImportRows.length + ' ambassadors') + '</button>' +
+          '<button class="btn secondary" data-action="close-credit-import">Cancel</button>' +
+        '</div>';
+    } else {
+      body = '<div class="import-dropzone">Choose a CSV with Phone Number, Credit Amount, Category, Reason, Expiration Date columns.<br><input type="file" accept=".csv,text/csv" data-action="credit-import-file"></div>' +
+        (UI.creditImportError ? '<div class="error-note">' + escapeHtml(UI.creditImportError) + '</div>' : '') +
+        '<div class="modal-actions"><button class="btn secondary" data-action="close-credit-import">Cancel</button></div>';
+    }
+    return '' +
+      '<div class="overlay" data-action="close-credit-import">' +
+        '<div class="modal" onclick="event.stopPropagation()">' +
+          '<div class="modal-body">' +
+            '<h2 style="margin-top:0;">Import credits</h2>' +
+            '<div class="sub" style="margin-bottom:14px;">Matches by phone number against the current roster.</div>' +
+            body +
+          '</div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  function renderUsageImportModal(){
+    if(!UI.usageImportOpen) return '';
+    var body;
+    var monthOpts = monthOptionsList();
+    var monthSelectHtml = '<div class="form-field full"><label>Month this usage covers</label><select id="usage-import-month" data-action="usage-import-month">' +
+      monthOpts.map(function(mo){ return '<option value="' + mo.key + '"' + (UI.usageImportMonth===mo.key?' selected':'') + '>' + escapeHtml(mo.label) + '</option>'; }).join('') +
+      '</select></div>';
+    if(UI.usageImportRows){
+      var unmatchedHtml = (UI.usageImportUnmatched && UI.usageImportUnmatched.length) ?
+        '<div class="error-note">Not on the roster — no match for: ' + UI.usageImportUnmatched.map(escapeHtml).join(', ') + '</div>' : '';
+      var summary = UI.usageImportRows.length + ' ambassadors matched.\nThis records games played and credits remaining for ' + monthKeyLabel(UI.usageImportMonth) + '.';
+      body = monthSelectHtml + '<div class="import-summary">' + escapeHtml(summary) + '</div>' +
+        unmatchedHtml +
+        '<div class="modal-actions">' +
+          '<button class="btn" data-action="confirm-usage-import"' + (UI.usageImporting?' disabled':'') + '>' + (UI.usageImporting ? 'Importing…' : 'Import ' + UI.usageImportRows.length + ' ambassadors') + '</button>' +
+          '<button class="btn secondary" data-action="close-usage-import">Cancel</button>' +
+        '</div>';
+    } else {
+      body = monthSelectHtml +
+        '<div class="import-dropzone">Choose the CSV exported from your Hex Captain Rewards table.<br><input type="file" accept=".csv,text/csv" data-action="usage-import-file"></div>' +
+        (UI.usageImportError ? '<div class="error-note">' + escapeHtml(UI.usageImportError) + '</div>' : '') +
+        '<div class="modal-actions"><button class="btn secondary" data-action="close-usage-import">Cancel</button></div>';
+    }
+    return '' +
+      '<div class="overlay" data-action="close-usage-import">' +
+        '<div class="modal" onclick="event.stopPropagation()">' +
+          '<div class="modal-body">' +
+            '<h2 style="margin-top:0;">Import usage</h2>' +
+            '<div class="sub" style="margin-bottom:14px;">Matches by phone number against the current roster.</div>' +
+            body +
+          '</div>' +
+        '</div>' +
+      '</div>';
+  }
+
   function renderPolicyForm(){
     if(!UI.addingPolicy && !UI.editingPolicyId) return '';
     var editing = UI.editingPolicyId ? STATE.policies.filter(function(x){ return x.id === UI.editingPolicyId; })[0] : null;
@@ -1358,6 +1723,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     else if(UI.page === 'schedules') pageBody = renderSchedulesPage();
     else if(UI.page === 'leaderboard') pageBody = renderLeaderboardPage();
     else if(UI.page === 'policies') pageBody = renderPoliciesPage();
+    else if(UI.page === 'credits') pageBody = renderCreditsPage();
     else pageBody = renderHomePage();
     var html = '' +
       renderTopBar() +
@@ -1370,6 +1736,8 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
       renderMemberModal() +
       renderMemberForm() +
       renderImportForm() +
+      renderCreditImportModal() +
+      renderUsageImportModal() +
       renderPolicyForm() +
       renderAuditLog();
     document.getElementById('app').innerHTML = html;
@@ -1493,6 +1861,11 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
             agreementSigned: document.getElementById('f-agreement').value === 'yes',
             agreementLink: document.getElementById('f-agreement-link').value.trim()
           };
+          var creditAmountVal = parseFloat(document.getElementById('f-credit-amount').value) || 0;
+          privateData.gameCreditAmount = creditAmountVal;
+          privateData.gameCreditCategory = document.getElementById('f-credit-category').value.trim();
+          privateData.gameCreditReason = document.getElementById('f-credit-reason').value.trim();
+          privateData.gameCreditMonth = creditAmountVal > 0 ? monthKeyLabel(currentMonthKey()) : '';
           var prevPublic = id ? STATE.members.filter(function(x){ return x.id === id; })[0] : null;
           var prevPrivate = id ? (STATE.membersPrivate[id] || {}) : {};
           var changed = [];
@@ -1535,6 +1908,56 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
         });
       } else if(action === 'export-csv'){
         el.addEventListener('click', exportCSV);
+      } else if(action === 'open-credit-import'){
+        el.addEventListener('click', function(){ UI.creditImportOpen = true; UI.creditImportRows = null; UI.creditImportUnmatched = null; UI.creditImportMonth = ''; UI.creditImportError = ''; render(); });
+      } else if(action === 'close-credit-import'){
+        el.addEventListener('click', function(){ UI.creditImportOpen = false; UI.creditImportRows = null; UI.creditImportUnmatched = null; UI.creditImportError = ''; render(); });
+      } else if(action === 'credit-import-file'){
+        el.addEventListener('change', function(){
+          var file = el.files && el.files[0];
+          if(!file) return;
+          var reader = new FileReader();
+          reader.onload = function(e){
+            var parsed = parseCreditsCSV(String(e.target.result||''));
+            if(parsed.error){ UI.creditImportError = parsed.error; UI.creditImportRows = null; UI.creditImportUnmatched = null; }
+            else { UI.creditImportRows = parsed.matched; UI.creditImportUnmatched = parsed.unmatched; UI.creditImportMonth = parsed.monthKey; UI.creditImportError = ''; }
+            render();
+          };
+          reader.onerror = function(){ UI.creditImportError = 'Could not read that file.'; render(); };
+          reader.readAsText(file);
+        });
+      } else if(action === 'confirm-credit-import'){
+        el.addEventListener('click', function(){
+          if(!UI.creditImportRows) return;
+          importCredits(UI.creditImportRows, UI.creditImportMonth);
+        });
+      } else if(action === 'generate-credits-export'){
+        el.addEventListener('click', exportNextCreditsCSV);
+      } else if(action === 'open-usage-import'){
+        el.addEventListener('click', function(){ UI.usageImportOpen = true; UI.usageImportRows = null; UI.usageImportUnmatched = null; UI.usageImportMonth = UI.usageImportMonth || currentMonthKey(); UI.usageImportError = ''; render(); });
+      } else if(action === 'close-usage-import'){
+        el.addEventListener('click', function(){ UI.usageImportOpen = false; UI.usageImportRows = null; UI.usageImportUnmatched = null; UI.usageImportError = ''; render(); });
+      } else if(action === 'usage-import-month'){
+        el.addEventListener('change', function(){ UI.usageImportMonth = el.value; render(); });
+      } else if(action === 'usage-import-file'){
+        el.addEventListener('change', function(){
+          var file = el.files && el.files[0];
+          if(!file) return;
+          var reader = new FileReader();
+          reader.onload = function(e){
+            var parsed = parseUsageCSV(String(e.target.result||''));
+            if(parsed.error){ UI.usageImportError = parsed.error; UI.usageImportRows = null; UI.usageImportUnmatched = null; }
+            else { UI.usageImportRows = parsed.matched; UI.usageImportUnmatched = parsed.unmatched; UI.usageImportError = ''; }
+            render();
+          };
+          reader.onerror = function(){ UI.usageImportError = 'Could not read that file.'; render(); };
+          reader.readAsText(file);
+        });
+      } else if(action === 'confirm-usage-import'){
+        el.addEventListener('click', function(){
+          if(!UI.usageImportRows) return;
+          importUsage(UI.usageImportRows, UI.usageImportMonth || currentMonthKey());
+        });
       } else if(action === 'clear-filters'){
         el.addEventListener('click', function(){ FILTERS.roles=[]; FILTERS.regions=[]; FILTERS.baTypes=[]; FILTERS.agreement='any'; FILTERS.credits='any'; FILTERS.minEvents=0; FILTERS.q=''; render(); });
       } else if(action === 'open-audit'){
