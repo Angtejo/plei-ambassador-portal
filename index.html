@@ -78,24 +78,29 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
 .card{background:var(--surface);border-radius:var(--radius-lg);border:1px solid var(--border);box-shadow:var(--shadow-sm);}
 .card-pad{padding:24px;}
 
-.map-layout{display:grid;grid-template-columns:1.55fr 1fr;gap:20px;margin-bottom:36px;}
-@media (max-width:880px){.map-layout{grid-template-columns:1fr;}}
-.map-svg-wrap{position:relative;}
+.map-svg-wrap{position:relative;margin-bottom:18px;}
 .map-svg-wrap svg{display:block;width:100%;height:auto;}
-.map-region{cursor:pointer;opacity:0.68;transition:opacity .15s;}
-.map-region:hover,.map-region.active{opacity:0.95;}
-.map-label{font-weight:800;font-size:19px;fill:var(--text);pointer-events:none;text-anchor:middle;}
+.map-region{cursor:pointer;opacity:0.82;transition:opacity .15s,filter .15s;}
+.map-region:hover,.map-region.active{opacity:1;filter:brightness(1.08);}
+.map-label{font-weight:800;font-size:19px;fill:#fff;pointer-events:none;text-anchor:middle;letter-spacing:0.5px;paint-order:stroke;stroke:rgba(0,0,0,0.28);stroke-width:3px;cursor:pointer;}
 .map-dot{fill:var(--accent);stroke:var(--bg);stroke-width:2;}
+.city-group{cursor:pointer;}
+.city-dot{stroke:#fff;stroke-width:1;transition:r .12s;}
+.city-label{fill:#fff;font-weight:600;text-anchor:start;pointer-events:none;paint-order:stroke;stroke:rgba(0,0,0,0.35);stroke-width:2.5px;dominant-baseline:middle;}
+.city-group:hover .city-dot{r:5;}
+.city-group:hover .city-label{fill:#fffbe0;}
 .stat-row{display:flex;gap:12px;margin-top:16px;flex-wrap:wrap;}
 .stat-tile{flex:1;min-width:120px;background:var(--surface-2);border-radius:var(--radius-md);padding:14px 16px;}
 .stat-num{font-size:22px;font-weight:800;}
 .stat-label{font-size:12px;color:var(--text-muted);margin-top:2px;}
-.leaders-list{display:flex;flex-direction:column;}
-.leader-row{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--border);gap:10px;}
-.leader-row:last-child{border-bottom:none;}
-.leader-name{font-weight:700;font-size:14px;}
-.leader-sub{font-size:12px;color:var(--text-muted);margin-top:1px;}
-.leader-region-dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:7px;}
+.region-table{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;}
+@media (max-width:900px){.region-table{grid-template-columns:repeat(2,1fr);}}
+@media (max-width:520px){.region-table{grid-template-columns:1fr;}}
+.region-col{border-radius:var(--radius-md);overflow:hidden;border:1px solid var(--border);background:var(--surface-2);}
+.region-col-head{padding:8px 12px;font-weight:800;font-size:12px;color:#fff;text-transform:uppercase;letter-spacing:0.4px;}
+.region-col-body{padding:12px;}
+.region-col-name{font-weight:700;font-size:14px;}
+.region-col-sub{font-size:11.5px;color:var(--text-muted);margin-top:3px;}
 
 .badge{font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:999px;letter-spacing:0.2px;text-transform:uppercase;white-space:nowrap;}
 .badge-ba{background:var(--badge-ba-bg);color:var(--badge-ba-fg);}
@@ -285,7 +290,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
 
   var FILTERS = {roles:[], regions:[], baTypes:[], agreement:'any', minEvents:0, showInactive:false, q:''};
   var UI = {
-    page: pageFromHash(), selectedId:null, adding:false, editingId:null, editingRegions:false, auditOpen:false,
+    page: pageFromHash(), selectedId:null, adding:false, editingId:null, auditOpen:false,
     filterPanelOpen:false, formBaTypes:[], pendingNewTypes:[],
     applySubmitted:false, addingPolicy:false, editingPolicyId:null,
     saving:false, seeding:false, importing:false, importOpen:false, importRows:null, importError:'', error:'', authError:''
@@ -554,11 +559,6 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     }
   }
   function deleteMember(id){ withSaving(db.collection('members').doc(id).delete()); }
-  function saveRegions(updates){
-    var batch = db.batch();
-    Object.keys(updates).forEach(function(k){ batch.update(db.collection('regions').doc(k), {supervisor: updates[k]}); });
-    withSaving(batch.commit());
-  }
   function saveSchedule(assignments){
     withSaving(db.collection('schedule').doc('current').set({weekLabel: STATE.schedule.weekLabel, days: DAYS, assignments: assignments}, {merge:true}));
   }
@@ -679,8 +679,24 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
 
   function citiesForRegion(key){
     var set = {};
-    STATE.members.forEach(function(m){ if(m.region === key && m.city && m.city.trim()) set[m.city.trim()] = true; });
+    STATE.members.forEach(function(m){ if(m.region === key && m.status !== 'inactive' && m.city && m.city.trim()) set[m.city.trim()] = true; });
     return Object.keys(set).sort();
+  }
+  function supervisorsForRegion(key){
+    var names = {};
+    STATE.members.forEach(function(m){ if(m.region === key && m.role === 'supervisor' && m.status !== 'inactive') names[m.name] = true; });
+    return Object.keys(names).sort();
+  }
+  function programManagers(){
+    var names = {};
+    STATE.members.forEach(function(m){ if(m.role === 'pm' && m.status !== 'inactive') names[m.name] = true; });
+    return Object.keys(names).sort();
+  }
+  var TEXT_MEASURE_CTX = null;
+  function measureTextWidth(text, fontPx){
+    if(!TEXT_MEASURE_CTX){ TEXT_MEASURE_CTX = document.createElement('canvas').getContext('2d'); }
+    TEXT_MEASURE_CTX.font = '600 ' + fontPx + 'px Inter, system-ui, sans-serif';
+    return TEXT_MEASURE_CTX.measureText(text).width;
   }
 
   function allBaTypes(){
@@ -796,43 +812,69 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
   }
 
   function regionMemberCount(key){
-    return STATE.members.filter(function(m){ return m.region === key; }).length;
+    return STATE.members.filter(function(m){ return m.region === key && m.status !== 'inactive'; }).length;
   }
 
   function renderMap(){
     var svgRegions = [
-      {key:'west', cx:150, cy:230, rx:150, ry:220, lx:150, ly:236},
-      {key:'central', cx:430, cy:230, rx:170, ry:230, lx:430, ly:226},
-      {key:'southeast', cx:640, cy:270, rx:92, ry:200, lx:640, ly:338},
-      {key:'northeast', cx:820, cy:180, rx:150, ry:170, lx:820, ly:136}
+      {key:'west', cx:150, cy:230, rx:150, ry:220},
+      {key:'central', cx:430, cy:230, rx:170, ry:230},
+      {key:'southeast', cx:640, cy:270, rx:92, ry:200},
+      {key:'northeast', cx:820, cy:180, rx:150, ry:170}
     ];
+    var defs = '<defs><filter id="blob-soft" x="-40%" y="-40%" width="180%" height="180%">' +
+      '<feGaussianBlur stdDeviation="6"></feGaussianBlur></filter>' +
+      '<radialGradient id="ocean" cx="50%" cy="35%" r="75%">' +
+      '<stop offset="0%" stop-color="var(--surface-2)"></stop><stop offset="100%" stop-color="var(--surface)"></stop></radialGradient></defs>';
+    var bg = '<rect x="0" y="0" width="1000" height="460" fill="url(#ocean)"></rect>';
     var shapes = svgRegions.map(function(r){
       var activeClass = (FILTERS.regions.indexOf(r.key) !== -1) ? ' active' : '';
-      return '<ellipse class="map-region' + activeClass + '" data-action="pick-region" data-value="' + r.key + '" cx="' + r.cx + '" cy="' + r.cy + '" rx="' + r.rx + '" ry="' + r.ry + '" fill="var(' + REGION_COLOR_VAR[r.key] + ')"></ellipse>' +
-        '<text class="map-label" x="' + r.lx + '" y="' + r.ly + '" data-action="pick-region" data-value="' + r.key + '">' + escapeHtml(regionName(r.key).toUpperCase()) + '</text>' +
-        '<circle class="map-dot" cx="' + r.cx + '" cy="' + (r.ly + 22) + '" r="7"></circle>';
+      var cities = citiesForRegion(r.key);
+      var titleY = r.cy - r.ry + 46;
+      var listTop = titleY + 32;
+      var available = Math.max(0, (r.ry * 2) - 78);
+      var n = cities.length;
+      var rowH = n ? Math.min(24, Math.max(15, available / n)) : 24;
+      var fontPx = rowH < 17 ? 9 : (rowH < 20 ? 10 : 11);
+      var dotR = 3.2;
+      var cityMarkup = cities.map(function(city, i){
+        var y = listTop + i * rowH;
+        var w = measureTextWidth(city, fontPx);
+        var totalW = dotR * 2 + 6 + w;
+        var startX = r.cx - totalW / 2;
+        var dotX = startX + dotR;
+        var textX = startX + dotR * 2 + 6;
+        return '<g class="city-group" data-action="pick-city" data-value="' + escapeHtml(city) + '">' +
+          '<circle class="city-dot" cx="' + dotX + '" cy="' + y + '" r="' + dotR + '" fill="var(' + REGION_COLOR_VAR[r.key] + ')"></circle>' +
+          '<text class="city-label" x="' + textX + '" y="' + (y + fontPx/2.6) + '" font-size="' + fontPx + '">' + escapeHtml(city) + '</text>' +
+        '</g>';
+      }).join('');
+      return '<ellipse class="map-region' + activeClass + '" filter="url(#blob-soft)" data-action="pick-region" data-value="' + r.key + '" cx="' + r.cx + '" cy="' + r.cy + '" rx="' + r.rx + '" ry="' + r.ry + '" fill="var(' + REGION_COLOR_VAR[r.key] + ')"></ellipse>' +
+        '<text class="map-label" x="' + r.cx + '" y="' + titleY + '" data-action="pick-region" data-value="' + r.key + '">' + escapeHtml(regionName(r.key).toUpperCase()) + '</text>' +
+        cityMarkup;
     }).join('');
 
-    var leaders = REGION_ORDER.map(function(key){
-      var region = STATE.regions[key] || {supervisor:''};
-      var cities = citiesForRegion(key);
-      return '<div class="leader-row">' +
-        '<div><span class="leader-region-dot" style="background:var(' + REGION_COLOR_VAR[key] + ')"></span><span class="leader-name">' + escapeHtml(regionName(key)) + '</span>' +
-        '<div class="leader-sub" style="margin-left:16px">' + escapeHtml(region.supervisor || 'Unassigned') + ' · ' + regionMemberCount(key) + ' on team</div>' +
-        (cities.length ? '<div class="region-cities" style="margin-left:16px">' + escapeHtml(cities.join(', ')) + '</div>' : '') + '</div>' +
-        (IS_PLEI_USER ? '<button class="icon-btn" data-action="edit-region" data-value="' + key + '" title="Edit region leader">✎</button>' : '') +
+    var cols = REGION_ORDER.map(function(key){
+      var sups = supervisorsForRegion(key);
+      return {
+        label: regionName(key), colorVar: REGION_COLOR_VAR[key],
+        name: sups.length ? sups.join(', ') : 'Unassigned',
+        sub: regionMemberCount(key) + ' on team'
+      };
+    });
+    var pms = programManagers();
+    cols.push({label:'Program Manager', colorVar:'--accent', name: pms.length ? pms.join(', ') : 'Unassigned', sub: 'Runs the program'});
+    var tableHtml = cols.map(function(c){
+      return '<div class="region-col">' +
+        '<div class="region-col-head" style="background:var(' + c.colorVar + ')">' + escapeHtml(c.label) + '</div>' +
+        '<div class="region-col-body"><div class="region-col-name">' + escapeHtml(c.name) + '</div><div class="region-col-sub">' + escapeHtml(c.sub) + '</div></div>' +
       '</div>';
     }).join('');
 
     return '' +
-      '<div class="map-layout">' +
-        '<div class="card card-pad">' +
-          '<div class="map-svg-wrap"><svg viewBox="0 0 1000 460" width="100%">' + shapes + '</svg></div>' +
-        '</div>' +
-        '<div class="card card-pad">' +
-          '<div class="section-head" style="margin-bottom:6px;"><h2 style="font-size:15px;">Regions</h2></div>' +
-          '<div class="leaders-list">' + leaders + '</div>' +
-        '</div>' +
+      '<div class="card card-pad" style="margin-bottom:20px;">' +
+        '<div class="map-svg-wrap"><svg viewBox="0 0 1000 460" width="100%">' + defs + bg + shapes + '</svg></div>' +
+        '<div class="region-table">' + tableHtml + '</div>' +
       '</div>';
   }
 
@@ -1063,27 +1105,6 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
       '</div>';
   }
 
-  function renderRegionForm(){
-    if(!UI.editingRegions) return '';
-    var rows = REGION_ORDER.map(function(key){
-      var region = STATE.regions[key] || {supervisor:''};
-      return '<div class="form-field full"><label>' + escapeHtml(regionName(key)) + ' supervisor</label><input data-region-input="' + key + '" type="text" value="' + escapeHtml(region.supervisor||'') + '"></div>';
-    }).join('');
-    return '' +
-      '<div class="overlay" data-action="close-region-form">' +
-        '<div class="modal" onclick="event.stopPropagation()">' +
-          '<div class="modal-body">' +
-            '<h2 style="margin-top:0;">Edit region leadership</h2>' +
-            '<div class="form-grid">' + rows + '</div>' +
-            '<div class="modal-actions">' +
-              '<button class="btn" data-action="save-regions">Save</button>' +
-              '<button class="btn secondary" data-action="close-region-form">Cancel</button>' +
-            '</div>' +
-          '</div>' +
-        '</div>' +
-      '</div>';
-  }
-
   function renderAuditLog(){
     if(!UI.auditOpen) return '';
     var actionLabel = {create:'added', update:'updated', delete:'removed', import:'ran a bulk import'};
@@ -1217,7 +1238,6 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
       renderMemberModal() +
       renderMemberForm() +
       renderImportForm() +
-      renderRegionForm() +
       renderPolicyForm() +
       renderAuditLog();
     document.getElementById('app').innerHTML = html;
@@ -1387,17 +1407,12 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
         el.addEventListener('click', function(){ UI.auditOpen = true; render(); });
       } else if(action === 'close-audit'){
         el.addEventListener('click', function(){ UI.auditOpen = false; render(); });
-      } else if(action === 'edit-region'){
-        el.addEventListener('click', function(){ UI.editingRegions = true; render(); });
-      } else if(action === 'close-region-form'){
-        el.addEventListener('click', function(){ UI.editingRegions = false; render(); });
-      } else if(action === 'save-regions'){
+      } else if(action === 'pick-city'){
         el.addEventListener('click', function(){
-          var inputs = document.querySelectorAll('[data-region-input]');
-          var updates = {};
-          inputs.forEach(function(inp){ updates[inp.getAttribute('data-region-input')] = inp.value.trim(); });
-          UI.editingRegions = false; render();
-          saveRegions(updates);
+          var city = el.getAttribute('data-value');
+          FILTERS.q = city;
+          render();
+          var sec = document.getElementById('roster-section'); if(sec) sec.scrollIntoView({behavior:'smooth', block:'start'});
         });
       } else if(action === 'save-schedule'){
         el.addEventListener('click', function(){
