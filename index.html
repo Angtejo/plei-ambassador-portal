@@ -192,6 +192,14 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
 .footer-note{color:var(--text-faint);font-size:12px;margin-top:36px;text-align:center;}
 .saving-note{font-size:12px;color:var(--text-muted);margin-top:8px;}
 .error-note{font-size:12px;color:var(--warn);margin-top:8px;}
+.log-list{display:flex;flex-direction:column;max-height:60vh;overflow-y:auto;}
+.log-row{padding:10px 0;border-bottom:1px solid var(--border);font-size:13px;}
+.log-row:last-child{border-bottom:none;}
+.log-meta{color:var(--text-muted);font-size:11.5px;margin-top:2px;}
+@keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+@keyframes modalIn{from{opacity:0;transform:translateY(8px) scale(.98);}to{opacity:1;transform:translateY(0) scale(1);}}
+.overlay{animation:fadeIn .12s ease;}
+.modal{animation:modalIn .16s ease;}
 </style>
 </head>
 <body>
@@ -225,6 +233,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     regions: {},
     members: [],
     membersPrivate: {},
+    auditLog: [],
     schedule: {weekLabel:'This week', days: DAYS, assignments: {}}
   };
   var LOADED = {regions:false, members:false, schedule:false};
@@ -232,9 +241,10 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
   var IS_PLEI_USER = false;
   var SCHEDULE_UNSUB = null;
   var PRIVATE_UNSUB = null;
+  var AUDIT_UNSUB = null;
 
   var FILTERS = {role:'all', region:'all', baType:'all', minEvents:0, showInactive:false, q:''};
-  var UI = {selectedId:null, adding:false, editingId:null, editingRegions:false, saving:false, seeding:false, importing:false, importOpen:false, importRows:null, importError:'', error:'', authError:''};
+  var UI = {selectedId:null, adding:false, editingId:null, editingRegions:false, auditOpen:false, saving:false, seeding:false, importing:false, importOpen:false, importRows:null, importError:'', error:'', authError:''};
 
   function isPleiEmail(user){
     return !!(user && user.email && /@plei\.com$/i.test(user.email) && user.emailVerified);
@@ -257,8 +267,10 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     IS_PLEI_USER = isPleiEmail(user);
     if(SCHEDULE_UNSUB){ SCHEDULE_UNSUB(); SCHEDULE_UNSUB = null; }
     if(PRIVATE_UNSUB){ PRIVATE_UNSUB(); PRIVATE_UNSUB = null; }
+    if(AUDIT_UNSUB){ AUDIT_UNSUB(); AUDIT_UNSUB = null; }
     LOADED.schedule = false;
     STATE.membersPrivate = {};
+    STATE.auditLog = [];
     if(IS_PLEI_USER){
       SCHEDULE_UNSUB = db.collection('schedule').doc('current').onSnapshot(function(doc){
         LOADED.schedule = true;
@@ -272,6 +284,12 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
         var next = {};
         snap.forEach(function(doc){ next[doc.id] = doc.data(); });
         STATE.membersPrivate = next;
+        render();
+      }, function(){ render(); });
+      AUDIT_UNSUB = db.collection('audit_log').orderBy('editedAt','desc').limit(20).onSnapshot(function(snap){
+        var next = [];
+        snap.forEach(function(doc){ next.push(doc.data()); });
+        STATE.auditLog = next;
         render();
       }, function(){ render(); });
     } else {
@@ -461,6 +479,58 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     withSaving(db.collection('schedule').doc('current').set({weekLabel: STATE.schedule.weekLabel, days: DAYS, assignments: assignments}, {merge:true}));
   }
 
+  function logAudit(action, memberId, memberName, note){
+    if(!IS_PLEI_USER) return;
+    db.collection('audit_log').add({
+      action: action, memberId: memberId || '', memberName: memberName || '', note: note || '',
+      editedBy: (CURRENT_USER && CURRENT_USER.email) || 'unknown',
+      editedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }).catch(function(){});
+  }
+
+  function csvEscape(v){
+    var s = String(v == null ? '' : v);
+    if(/[",\n]/.test(s)){ s = '"' + s.replace(/"/g, '""') + '"'; }
+    return s;
+  }
+  function exportCSV(){
+    var members = filteredMembers();
+    var cols = ['Name','City','Region','Position','Reports To','Type of BA','Status','Events Worked'];
+    if(IS_PLEI_USER){ cols = cols.concat(['Phone','Email','Instagram/TikTok','Work Authorization','Mailing Address','Bib/Ball Inventory','Agreement Signed']); }
+    var lines = [cols.map(csvEscape).join(',')];
+    members.forEach(function(m){
+      var region = STATE.regions[m.region] || {name:m.region};
+      var row = [m.name, m.city||'', region.name||m.region, ROLE_LABELS[m.role]||m.role, m.reportsTo||'', (m.baTypes||[]).join('; '), m.status==='inactive'?'Inactive':'Active', m.eventsWorked||0];
+      if(IS_PLEI_USER){
+        var priv = STATE.membersPrivate[m.id] || {};
+        row = row.concat([priv.phone||'', priv.email||'', priv.instagram||'', priv.workAuth||'', priv.mailingAddress||'', priv.bibBallInventory||'', priv.agreementSigned===true?'Yes':(priv.agreementSigned===false?'No':'')]);
+      }
+      lines.push(row.map(csvEscape).join(','));
+    });
+    var blob = new Blob([lines.join('\n')], {type:'text/csv;charset=utf-8;'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = 'plei-ambassadors-' + (new Date().toISOString().slice(0,10)) + '.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  }
+
+  function computeStats(){
+    var active = STATE.members.filter(function(m){ return m.status !== 'inactive'; });
+    var totalEvents = active.reduce(function(s,m){ return s + (m.eventsWorked||0); }, 0);
+    var agreementCount = 0, agreementKnown = 0;
+    if(IS_PLEI_USER){
+      active.forEach(function(m){
+        var priv = STATE.membersPrivate[m.id];
+        if(priv && typeof priv.agreementSigned === 'boolean'){ agreementKnown++; if(priv.agreementSigned) agreementCount++; }
+      });
+    }
+    return {
+      active: active.length, cities: cityCount(), totalEvents: totalEvents,
+      agreementPct: agreementKnown ? Math.round(100*agreementCount/agreementKnown) : null
+    };
+  }
+
   function filteredMembers(){
     return STATE.members.filter(function(m){
       if(!FILTERS.showInactive && m.status === 'inactive') return false;
@@ -497,6 +567,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     var authHtml;
     if(CURRENT_USER){
       authHtml = '<span class="sub" style="margin:0;">' + escapeHtml(CURRENT_USER.email) + '</span>' +
+        (IS_PLEI_USER ? '<button class="auth-btn" data-action="open-audit">Activity log</button>' : '') +
         '<button class="auth-btn" data-action="sign-out">Sign out</button>';
     } else {
       authHtml = '<button class="auth-btn primary" data-action="sign-in">Sign in with Google (Plei team)</button>';
@@ -519,6 +590,19 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
         '<button class="auth-btn" data-action="sign-out">Sign out</button></div>';
     }
     return '<div class="readonly-banner">You\'re viewing the public roster. Plei team members: sign in with your @plei.com Google account to edit and see scheduling.</div>';
+  }
+
+  function renderGlance(){
+    if(!LOADED.regions || !LOADED.members) return '';
+    var stats = computeStats();
+    var tiles = [
+      {n: stats.active, label:'Active Ambassadors'},
+      {n: stats.cities, label:'Cities Covered'},
+      {n: stats.totalEvents, label:'Events Logged'}
+    ];
+    tiles.push(stats.agreementPct !== null ? {n: stats.agreementPct + '%', label:'Agreements Signed'} : {n: 4, label:'Regions'});
+    var html = tiles.map(function(t){ return '<div class="stat-tile"><div class="stat-num tabular">' + t.n + '</div><div class="stat-label">' + t.label + '</div></div>'; }).join('');
+    return '<div class="card card-pad" style="margin-bottom:24px;"><div class="stat-row" style="margin-top:0;">' + html + '</div></div>';
   }
 
   function renderFilterBar(){
@@ -582,11 +666,6 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
       '<div class="map-layout">' +
         '<div class="card card-pad">' +
           '<div class="map-svg-wrap"><svg viewBox="0 0 1000 460" width="100%">' + shapes + '</svg></div>' +
-          '<div class="stat-row">' +
-            '<div class="stat-tile"><div class="stat-num tabular">' + STATE.members.length + '</div><div class="stat-label">Total team members</div></div>' +
-            '<div class="stat-tile"><div class="stat-num tabular">' + cityCount() + '</div><div class="stat-label">Cities active</div></div>' +
-            '<div class="stat-tile"><div class="stat-num tabular">4</div><div class="stat-label">Regions</div></div>' +
-          '</div>' +
         '</div>' +
         '<div class="card card-pad">' +
           '<div class="section-head" style="margin-bottom:6px;"><h2 style="font-size:15px;">Region Leaders</h2></div>' +
@@ -612,13 +691,18 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
         '</div>' +
       '</div>';
     }).join('');
-    var addBtn = IS_PLEI_USER ? '<button class="btn secondary" data-action="open-import">Import roster (CSV)</button><button class="btn" data-action="add-member">+ Add member</button>' : '';
+    var exportBtn = STATE.members.length ? '<button class="btn secondary" data-action="export-csv">Export CSV</button>' : '';
+    var addBtn = exportBtn + (IS_PLEI_USER ? '<button class="btn secondary" data-action="open-import">Import roster (CSV)</button><button class="btn" data-action="add-member">+ Add member</button>' : '');
+    var filtersActive = FILTERS.role!=='all' || FILTERS.region!=='all' || FILTERS.baType!=='all' || FILTERS.minEvents>0 || !!FILTERS.q;
     var emptyBody;
     if(!LOADED.regions || !LOADED.members){
       emptyBody = '<div class="empty-note">Loading…</div>';
     } else if(STATE.members.length === 0 && IS_PLEI_USER){
       emptyBody = '<div class="empty-actions"><div class="empty-note">No data yet — import your roster or set up the default regions and leadership to get started.</div>' +
         '<button class="btn secondary" data-action="seed-defaults"' + (UI.seeding ? ' disabled' : '') + '>' + (UI.seeding ? 'Setting up…' : 'Set up default regions & leadership') + '</button></div>';
+    } else if(filtersActive){
+      emptyBody = '<div class="empty-actions"><div class="empty-note">No one matches these filters yet.</div>' +
+        '<button class="btn secondary" data-action="clear-filters">Clear filters</button></div>';
     } else {
       emptyBody = '<div class="empty-note">No one matches these filters yet.</div>';
     }
@@ -833,10 +917,33 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
       '</div>';
   }
 
+  function renderAuditLog(){
+    if(!UI.auditOpen) return '';
+    var actionLabel = {create:'added', update:'updated', delete:'removed', import:'ran a bulk import'};
+    var rows = (STATE.auditLog||[]).map(function(e){
+      var when = (e.editedAt && e.editedAt.toDate) ? e.editedAt.toDate().toLocaleString() : 'just now';
+      var label = actionLabel[e.action] || e.action;
+      return '<div class="log-row"><div><strong>' + escapeHtml(e.editedBy||'Someone') + '</strong> ' + label + (e.memberName ? ' <strong>' + escapeHtml(e.memberName) + '</strong>' : '') + '</div>' +
+        (e.note ? '<div class="log-meta">' + escapeHtml(e.note) + '</div>' : '') +
+        '<div class="log-meta">' + escapeHtml(when) + '</div></div>';
+    }).join('');
+    return '' +
+      '<div class="overlay" data-action="close-audit">' +
+        '<div class="modal" onclick="event.stopPropagation()">' +
+          '<div class="modal-body">' +
+            '<div class="section-head"><h2 style="font-size:17px;">Activity Log</h2><button class="icon-btn" data-action="close-audit" title="Close">✕</button></div>' +
+            '<div class="sub" style="margin-bottom:14px;">Last 20 changes to the roster, most recent first — this record can\'t be edited or deleted.</div>' +
+            '<div class="log-list">' + (rows || '<div class="empty-note">No activity yet.</div>') + '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+  }
+
   function render(){
     var html = '' +
       renderTopBar() +
       renderBanner() +
+      renderGlance() +
       renderFilterBar() +
       renderMap() +
       renderRoster() +
@@ -847,7 +954,8 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
       renderMemberModal() +
       renderMemberForm() +
       renderImportForm() +
-      renderRegionForm();
+      renderRegionForm() +
+      renderAuditLog();
     document.getElementById('app').innerHTML = html;
     bindHandlers();
   }
@@ -879,6 +987,8 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
       } else if(action === 'delete-member'){
         el.addEventListener('click', function(){
           var id = el.getAttribute('data-value');
+          var m = STATE.members.filter(function(x){ return x.id === id; })[0];
+          logAudit('delete', id, m ? m.name : id, 'removed from roster');
           UI.selectedId = null; render();
           deleteMember(id);
         });
@@ -909,6 +1019,14 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
             bibBallInventory: document.getElementById('f-inventory').value.trim(),
             agreementSigned: document.getElementById('f-agreement').value === 'yes'
           };
+          var prevPublic = id ? STATE.members.filter(function(x){ return x.id === id; })[0] : null;
+          var prevPrivate = id ? (STATE.membersPrivate[id] || {}) : {};
+          var changed = [];
+          if(prevPublic){
+            Object.keys(data).forEach(function(k){ if(JSON.stringify(prevPublic[k]) !== JSON.stringify(data[k])) changed.push(k); });
+            Object.keys(privateData).forEach(function(k){ if(JSON.stringify(prevPrivate[k]) !== JSON.stringify(privateData[k])) changed.push(k); });
+          }
+          logAudit(id ? 'update' : 'create', id, data.name, id ? ('changed: ' + (changed.join(', ') || '—')) : 'new member added');
           UI.adding = false; UI.editingId = null; render();
           saveMember(id || null, data, privateData);
         });
@@ -937,7 +1055,20 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
           reader.readAsText(file);
         });
       } else if(action === 'confirm-import'){
-        el.addEventListener('click', function(){ if(UI.importRows) importRoster(UI.importRows); });
+        el.addEventListener('click', function(){
+          if(!UI.importRows) return;
+          var inactiveN = UI.importRows.filter(function(p){ return p.status === 'inactive'; }).length;
+          logAudit('import', '', '', 'bulk import: ' + UI.importRows.length + ' people (' + inactiveN + ' inactive)');
+          importRoster(UI.importRows);
+        });
+      } else if(action === 'export-csv'){
+        el.addEventListener('click', exportCSV);
+      } else if(action === 'clear-filters'){
+        el.addEventListener('click', function(){ FILTERS.role='all'; FILTERS.region='all'; FILTERS.baType='all'; FILTERS.minEvents=0; FILTERS.q=''; render(); });
+      } else if(action === 'open-audit'){
+        el.addEventListener('click', function(){ UI.auditOpen = true; render(); });
+      } else if(action === 'close-audit'){
+        el.addEventListener('click', function(){ UI.auditOpen = false; render(); });
       } else if(action === 'edit-region'){
         el.addEventListener('click', function(){ UI.editingRegions = true; render(); });
       } else if(action === 'close-region-form'){
