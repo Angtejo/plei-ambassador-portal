@@ -82,8 +82,12 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
 
 .map-svg-wrap{position:relative;margin-bottom:14px;border-radius:var(--radius-md);overflow:hidden;border:1px solid var(--border);}
 .map-svg-wrap svg{display:block;width:100%;height:auto;}
-.na-ocean{fill:#eaf3f8;}
-.na-landmass{fill:var(--surface-2);stroke:var(--border);stroke-width:1;}
+.na-ocean{fill:#dcecf1;}
+.na-landmass{fill:#c9e4d4;stroke:#5f8a71;stroke-width:1.6;}
+.na-state-lines{fill:none;stroke:#5f8a71;stroke-width:1;stroke-opacity:0.85;pointer-events:none;}
+.map-region{cursor:pointer;opacity:0.62;transition:opacity .15s;}
+.map-region:hover,.map-region.active{opacity:0.82;}
+.map-label{font-weight:800;font-size:18px;fill:#fff;pointer-events:none;text-anchor:middle;letter-spacing:0.5px;paint-order:stroke;stroke:rgba(0,0,0,0.3);stroke-width:3px;}
 .pin{cursor:pointer;stroke:#fff;stroke-width:1.5;transition:r .12s;}
 .city-group{cursor:pointer;}
 .city-group:hover .pin{r:7;}
@@ -120,6 +124,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
 .badge-supervisor{background:var(--badge-sup-bg);color:var(--badge-sup-fg);}
 .badge-pm{background:var(--badge-pm-bg);color:var(--badge-pm-fg);}
 .badge-outline{border:1px solid var(--border);color:var(--text-muted);background:transparent;}
+.badge-credit{background:#e4f5ea;color:#1f7a4d;}
 
 .section-head{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;margin:0 0 16px;flex-wrap:wrap;}
 .section-head h2{font-size:19px;font-weight:800;margin:0;}
@@ -291,19 +296,29 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     if(CITY_COORDS[comma]) return CITY_COORDS[comma];
     return null;
   }
-  var GEO = {loading:true, error:null, pathD:'', width:960, height:600};
+  function paddedBoundsFeature(coordsList){
+    if(!coordsList.length) return null;
+    var lons = coordsList.map(function(c){ return c[0]; }), lats = coordsList.map(function(c){ return c[1]; });
+    var minLon = Math.min.apply(null, lons), maxLon = Math.max.apply(null, lons);
+    var minLat = Math.min.apply(null, lats), maxLat = Math.max.apply(null, lats);
+    var lonPad = Math.max(4, (maxLon - minLon) * 0.28), latPad = Math.max(3, (maxLat - minLat) * 0.28);
+    return {type:'Feature', geometry:{type:'MultiPoint', coordinates:[
+      [minLon-lonPad, minLat-latPad],[minLon-lonPad, maxLat+latPad],[maxLon+lonPad, minLat-latPad],[maxLon+lonPad, maxLat+latPad]
+    ]}};
+  }
+  var GEO = {loading:true, error:null, landFC:null, borderGeom:null, width:960, height:600};
   function loadGeo(){
-    fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-50m.json').then(function(r){
-      if(!r.ok) throw new Error('map data request failed');
-      return r.json();
-    }).then(function(topo){
-      var geo = topojson.feature(topo, topo.objects.countries);
-      var features = geo.features.filter(function(f){ return f.id === '840' || f.id === '124'; });
-      var fc = {type:'FeatureCollection', features: features};
-      var projection = d3.geoMercator().fitSize([GEO.width, GEO.height], fc);
-      var pathGen = d3.geoPath(projection);
-      GEO.pathD = pathGen(fc);
-      GEO.projection = projection;
+    Promise.all([
+      fetch('https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json').then(function(r){ if(!r.ok) throw new Error('US map data request failed'); return r.json(); }),
+      fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-50m.json').then(function(r){ if(!r.ok) throw new Error('world map data request failed'); return r.json(); })
+    ]).then(function(results){
+      var usTopo = results[0], worldTopo = results[1];
+      var nation = topojson.feature(usTopo, usTopo.objects.nation);
+      var worldGeo = topojson.feature(worldTopo, worldTopo.objects.countries);
+      var canada = worldGeo.features.filter(function(f){ return f.id === '124'; })[0];
+      var landFeatures = canada ? [nation, canada] : [nation];
+      GEO.landFC = {type:'FeatureCollection', features: landFeatures};
+      GEO.borderGeom = topojson.mesh(usTopo, usTopo.objects.states, function(a,b){ return a !== b; });
       GEO.loading = false;
       GEO.error = null;
       render();
@@ -353,7 +368,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
   var APPLICATIONS_UNSUB = null;
   var BOOTSTRAPPED_TYPES = false;
 
-  var FILTERS = {roles:[], regions:[], baTypes:[], agreement:'any', minEvents:0, showInactive:false, q:''};
+  var FILTERS = {roles:[], regions:[], baTypes:[], agreement:'any', credits:'any', minEvents:0, showInactive:false, q:''};
   var UI = {
     page: pageFromHash(), selectedId:null, adding:false, editingId:null, auditOpen:false,
     filterPanelOpen:false, formBaTypes:[], pendingNewTypes:[],
@@ -647,13 +662,13 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
   function exportCSV(){
     var members = filteredMembers();
     var cols = ['Name','City','Region','Position','Reports To','Type of BA','Status','Events Worked'];
-    if(IS_PLEI_USER){ cols = cols.concat(['Phone','Email','Instagram/TikTok','Work Authorization','Mailing Address','Bib/Ball Inventory','Agreement Signed']); }
+    if(IS_PLEI_USER){ cols = cols.concat(['Phone','Email','Instagram/TikTok','Work Authorization','Mailing Address','Bib/Ball Inventory','Agreement Signed','Game Credit Amount','Game Credit Month']); }
     var lines = [cols.map(csvEscape).join(',')];
     members.forEach(function(m){
       var row = [m.name, m.city||'', regionName(m.region), ROLE_LABELS[m.role]||m.role, m.reportsTo||'', (m.baTypes||[]).join('; '), m.status==='inactive'?'Inactive':'Active', m.eventsWorked||0];
       if(IS_PLEI_USER){
         var priv = STATE.membersPrivate[m.id] || {};
-        row = row.concat([priv.phone||'', priv.email||'', priv.instagram||'', priv.workAuth||'', priv.mailingAddress||'', priv.bibBallInventory||'', priv.agreementSigned===true?'Yes':(priv.agreementSigned===false?'No':'')]);
+        row = row.concat([priv.phone||'', priv.email||'', priv.instagram||'', priv.workAuth||'', priv.mailingAddress||'', priv.bibBallInventory||'', priv.agreementSigned===true?'Yes':(priv.agreementSigned===false?'No':''), priv.gameCreditAmount!=null?priv.gameCreditAmount:'', priv.gameCreditMonth||'']);
       }
       lines.push(row.map(csvEscape).join(','));
     });
@@ -700,21 +715,24 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     var active = STATE.members.filter(function(m){ return m.status !== 'inactive'; });
     var totalEvents = active.reduce(function(s,m){ return s + (m.eventsWorked||0); }, 0);
     var agreementCount = 0, agreementKnown = 0;
+    var totalCredits = 0, creditedCount = 0;
     if(IS_PLEI_USER){
       active.forEach(function(m){
         var priv = STATE.membersPrivate[m.id];
         if(priv && typeof priv.agreementSigned === 'boolean'){ agreementKnown++; if(priv.agreementSigned) agreementCount++; }
+        if(priv && priv.gameCreditAmount != null && priv.gameCreditAmount > 0){ totalCredits += priv.gameCreditAmount; creditedCount++; }
       });
     }
     return {
       active: active.length, cities: cityCount(), totalEvents: totalEvents,
-      agreementPct: agreementKnown ? Math.round(100*agreementCount/agreementKnown) : null
+      agreementPct: agreementKnown ? Math.round(100*agreementCount/agreementKnown) : null,
+      totalCredits: totalCredits, creditedCount: creditedCount
     };
   }
 
   function activeFilterCount(){
     return FILTERS.roles.length + FILTERS.regions.length + FILTERS.baTypes.length +
-      (FILTERS.agreement !== 'any' ? 1 : 0) + (FILTERS.minEvents > 0 ? 1 : 0) + (FILTERS.showInactive ? 1 : 0);
+      (FILTERS.agreement !== 'any' ? 1 : 0) + (FILTERS.credits !== 'any' ? 1 : 0) + (FILTERS.minEvents > 0 ? 1 : 0) + (FILTERS.showInactive ? 1 : 0);
   }
   function filteredMembers(){
     return STATE.members.filter(function(m){
@@ -727,6 +745,12 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
         var signed = priv.agreementSigned === true;
         if(FILTERS.agreement === 'signed' && !signed) return false;
         if(FILTERS.agreement === 'unsigned' && signed) return false;
+      }
+      if(FILTERS.credits !== 'any' && IS_PLEI_USER){
+        var priv2 = STATE.membersPrivate[m.id] || {};
+        var hasCredit = priv2.gameCreditAmount != null && priv2.gameCreditAmount > 0;
+        if(FILTERS.credits === 'has' && !hasCredit) return false;
+        if(FILTERS.credits === 'none' && hasCredit) return false;
       }
       if(FILTERS.minEvents > 0 && (m.eventsWorked||0) < FILTERS.minEvents) return false;
       if(FILTERS.q){
@@ -832,6 +856,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
       {n: stats.totalEvents, label:'Events Logged'}
     ];
     tiles.push(stats.agreementPct !== null ? {n: stats.agreementPct + '%', label:'Agreements Signed'} : {n: 4, label:'Regions'});
+    if(IS_PLEI_USER && stats.creditedCount > 0){ tiles.push({n: '$' + stats.totalCredits, label: stats.creditedCount + ' Credited This Month'}); }
     var html = tiles.map(function(t){ return '<div class="stat-tile"><div class="stat-num tabular">' + t.n + '</div><div class="stat-label">' + t.label + '</div></div>'; }).join('');
     return '<div class="card card-pad" style="margin-bottom:24px;"><div class="stat-row" style="margin-top:0;">' + html + '</div></div>';
   }
@@ -866,6 +891,9 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     var agreementSelect = IS_PLEI_USER ? '<select class="search-input" data-action="filter-agreement">' +
       ['any','signed','unsigned'].map(function(v){ var label = v==='any' ? 'Any agreement status' : (v==='signed' ? 'Agreement signed' : 'Agreement not signed'); return '<option value="' + v + '"' + (FILTERS.agreement===v?' selected':'') + '>' + label + '</option>'; }).join('') +
       '</select>' : '';
+    var creditsSelect = IS_PLEI_USER ? '<select class="search-input" data-action="filter-credits">' +
+      ['any','has','none'].map(function(v){ var label = v==='any' ? 'Any credit status' : (v==='has' ? 'Has game credits' : 'No game credits'); return '<option value="' + v + '"' + (FILTERS.credits===v?' selected':'') + '>' + label + '</option>'; }).join('') +
+      '</select>' : '';
     var inactiveToggle = IS_PLEI_USER ? '<label class="filter-check"><input type="checkbox" data-action="toggle-inactive"' + (FILTERS.showInactive?' checked':'') + '> Show inactive</label>' : '';
     return '' +
       '<div class="filter-panel">' +
@@ -873,7 +901,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
           '<div><div class="filter-col-label">Position</div>' + roleChecks + '</div>' +
           '<div><div class="filter-col-label">Region</div>' + regionChecks + '</div>' +
           '<div><div class="filter-col-label">Type of BA</div>' + typeChecks + addType + '</div>' +
-          '<div><div class="filter-col-label">Other</div>' + minEventsSelect + (agreementSelect ? '<div style="margin-top:8px;">' + agreementSelect + '</div>' : '') + (inactiveToggle ? '<div style="margin-top:8px;">' + inactiveToggle + '</div>' : '') + '</div>' +
+          '<div><div class="filter-col-label">Other</div>' + minEventsSelect + (agreementSelect ? '<div style="margin-top:8px;">' + agreementSelect + '</div>' : '') + (creditsSelect ? '<div style="margin-top:8px;">' + creditsSelect + '</div>' : '') + (inactiveToggle ? '<div style="margin-top:8px;">' + inactiveToggle + '</div>' : '') + '</div>' +
         '</div>' +
         '<div class="filter-panel-actions">' +
           '<span class="sub" style="margin:0;">' + filteredMembers().length + ' match' + (filteredMembers().length===1?'':'es') + '</span>' +
@@ -900,22 +928,47 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     } else {
       var all = allCitiesWithRegion();
       var unmapped = [];
-      var pins = all.map(function(c){
+      var matched = [];
+      all.forEach(function(c){
         var coords = findCityCoords(c.city);
-        if(!coords){ unmapped.push(c); return ''; }
-        var xy = GEO.projection(coords);
-        if(!xy) { unmapped.push(c); return ''; }
-        var colorVar = REGION_COLOR_VAR[c.region] || '--accent';
-        var labelAnchor = xy[0] > GEO.width - 130 ? 'end' : 'start';
+        if(coords) matched.push({city:c.city, region:c.region, coords:coords}); else unmapped.push(c);
+      });
+      var boundsFeature = matched.length ? paddedBoundsFeature(matched.map(function(m){ return m.coords; })) : null;
+      var projection = boundsFeature ?
+        d3.geoMercator().fitExtent([[20,20],[GEO.width-20,GEO.height-20]], boundsFeature) :
+        d3.geoMercator().fitSize([GEO.width, GEO.height], GEO.landFC);
+      var pathGen = d3.geoPath(projection);
+      var landPathD = pathGen(GEO.landFC);
+      var borderPathD = pathGen(GEO.borderGeom);
+      var placed = matched.map(function(c){ var xy = projection(c.coords); return {city:c.city, region:c.region, xy:xy}; }).filter(function(p){ return p.xy; });
+      var defs = '<defs><filter id="blob-soft" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="10"></feGaussianBlur></filter></defs>';
+      var bubbles = REGION_ORDER.map(function(key){
+        var pts = placed.filter(function(p){ return p.region === key; });
+        if(!pts.length) return '';
+        var xs = pts.map(function(p){ return p.xy[0]; }), ys = pts.map(function(p){ return p.xy[1]; });
+        var minX = Math.min.apply(null, xs), maxX = Math.max.apply(null, xs);
+        var minY = Math.min.apply(null, ys), maxY = Math.max.apply(null, ys);
+        var cx = (minX+maxX)/2, cy = (minY+maxY)/2;
+        var rx = Math.max(75, (maxX-minX)/2 + 60), ry = Math.max(85, (maxY-minY)/2 + 70);
+        var activeClass = (FILTERS.regions.indexOf(key) !== -1) ? ' active' : '';
+        return '<ellipse class="map-region' + activeClass + '" filter="url(#blob-soft)" data-action="pick-region" data-value="' + key + '" cx="' + cx + '" cy="' + cy + '" rx="' + rx + '" ry="' + ry + '" fill="var(' + REGION_COLOR_VAR[key] + ')"></ellipse>' +
+          '<text class="map-label" x="' + cx + '" y="' + (cy - ry + 26) + '" data-action="pick-region" data-value="' + key + '">' + escapeHtml(regionName(key).toUpperCase()) + '</text>';
+      }).join('');
+      var pins = placed.map(function(p){
+        var colorVar = REGION_COLOR_VAR[p.region] || '--accent';
+        var labelAnchor = p.xy[0] > GEO.width - 130 ? 'end' : 'start';
         var labelDx = labelAnchor === 'end' ? -8 : 8;
-        return '<g class="city-group" data-action="pick-city" data-value="' + escapeHtml(c.city) + '">' +
-          '<circle class="pin" cx="' + xy[0] + '" cy="' + xy[1] + '" r="5" fill="var(' + colorVar + ')"></circle>' +
-          '<text class="pin-label" x="' + (xy[0] + labelDx) + '" y="' + (xy[1] + 3) + '" text-anchor="' + labelAnchor + '">' + escapeHtml(c.city) + '</text>' +
+        return '<g class="city-group" data-action="pick-city" data-value="' + escapeHtml(p.city) + '">' +
+          '<circle class="pin" cx="' + p.xy[0] + '" cy="' + p.xy[1] + '" r="5" fill="var(' + colorVar + ')"></circle>' +
+          '<text class="pin-label" x="' + (p.xy[0] + labelDx) + '" y="' + (p.xy[1] + 3) + '" text-anchor="' + labelAnchor + '">' + escapeHtml(p.city) + '</text>' +
         '</g>';
       }).join('');
       var svg = '<svg viewBox="0 0 ' + GEO.width + ' ' + GEO.height + '" width="100%">' +
+        defs +
         '<rect x="0" y="0" width="' + GEO.width + '" height="' + GEO.height + '" class="na-ocean"></rect>' +
-        '<path d="' + GEO.pathD + '" class="na-landmass"></path>' +
+        '<path d="' + landPathD + '" class="na-landmass"></path>' +
+        '<path d="' + borderPathD + '" class="na-state-lines"></path>' +
+        bubbles +
         pins +
       '</svg>';
       var unmappedNote = unmapped.length ? '<div class="map-unmapped-note">Not shown on the map yet (no coordinates on file) — click to filter the roster anyway: ' +
@@ -953,6 +1006,9 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     var members = filteredMembers();
     var cards = members.map(function(m){
       var typeTags = (m.baTypes||[]).map(function(t){ return '<span class="tag">' + escapeHtml(t) + '</span>'; }).join('');
+      var priv = STATE.membersPrivate[m.id] || {};
+      var creditBadge = (IS_PLEI_USER && priv.gameCreditAmount != null && priv.gameCreditAmount > 0) ?
+        '<span class="badge badge-credit">$' + priv.gameCreditAmount + ' credit</span>' : '';
       return '<div class="member-card" data-action="open-member" data-value="' + m.id + '">' +
         '<div class="member-top">' +
           '<div class="avatar">' + escapeHtml(initials(m.name)) + '</div>' +
@@ -961,6 +1017,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
         (typeTags ? '<div class="tag-row" style="margin:12px 0 0;">' + typeTags + '</div>' : '') +
         '<div class="member-meta">' +
           '<span class="badge ' + ROLE_BADGE_CLASS[m.role] + (m.status==='inactive' ? ' badge-inactive' : '') + '">' + (m.status==='inactive' ? 'Inactive' : escapeHtml(ROLE_LABELS[m.role])) + '</span>' +
+          creditBadge +
           '<span class="member-events tabular">' + (m.eventsWorked||0) + ' events</span>' +
         '</div>' +
       '</div>';
@@ -1044,15 +1101,19 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
       var priv = STATE.membersPrivate[m.id] || {};
       var agreementVal = priv.agreementSigned === true ? 'Yes' : (priv.agreementSigned === false ? 'No' : '—');
       var agreementHtml = priv.agreementLink ? '<a href="' + escapeHtml(priv.agreementLink) + '" target="_blank" rel="noopener">' + escapeHtml(agreementVal) + ' — view agreement ↗</a>' : escapeHtml(agreementVal);
+      var creditHtml = priv.gameCreditAmount != null ?
+        '$' + priv.gameCreditAmount + (priv.gameCreditCategory ? ' — ' + escapeHtml(priv.gameCreditCategory) : '') + (priv.gameCreditReason ? ' (' + escapeHtml(priv.gameCreditReason) + ')' : '') +
+        (priv.gameCreditMonth ? '<div class="log-meta">' + escapeHtml(priv.gameCreditMonth) + (priv.gameCreditExpiration ? ' · expires ' + escapeHtml(priv.gameCreditExpiration) : '') + '</div>' : '') : '';
       var kv = [
         ['Phone', priv.phone], ['Email', priv.email], ['Mailing address', priv.mailingAddress],
         ['Work authorization', priv.workAuth], ['Instagram/TikTok', priv.instagram],
         ['Bib/ball inventory', priv.bibBallInventory],
-        ['Agreement signed', priv.agreementSigned != null || priv.agreementLink ? agreementHtml : '']
+        ['Agreement signed', priv.agreementSigned != null || priv.agreementLink ? agreementHtml : ''],
+        ['Game credits', creditHtml]
       ].filter(function(pair){ return pair[1]; });
       if(kv.length){
         contactBody = '<div class="section-label">Contact &amp; Admin</div>' +
-          kv.map(function(pair){ return '<div class="kv-row"><span class="k">' + pair[0] + '</span><span class="v">' + (pair[0]==='Agreement signed' ? pair[1] : escapeHtml(pair[1])) + '</span></div>'; }).join('');
+          kv.map(function(pair){ return '<div class="kv-row"><span class="k">' + pair[0] + '</span><span class="v">' + (pair[0]==='Agreement signed' || pair[0]==='Game credits' ? pair[1] : escapeHtml(pair[1])) + '</span></div>'; }).join('');
       }
     }
     var weekBody;
@@ -1354,6 +1415,8 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
         });
       } else if(action === 'filter-agreement'){
         el.addEventListener('change', function(){ FILTERS.agreement = el.value; render(); });
+      } else if(action === 'filter-credits'){
+        el.addEventListener('change', function(){ FILTERS.credits = el.value; render(); });
       } else if(action === 'add-batype-filter'){
         el.addEventListener('click', function(){
           var input = document.getElementById('f-filter-newtype');
@@ -1473,7 +1536,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
       } else if(action === 'export-csv'){
         el.addEventListener('click', exportCSV);
       } else if(action === 'clear-filters'){
-        el.addEventListener('click', function(){ FILTERS.roles=[]; FILTERS.regions=[]; FILTERS.baTypes=[]; FILTERS.agreement='any'; FILTERS.minEvents=0; FILTERS.q=''; render(); });
+        el.addEventListener('click', function(){ FILTERS.roles=[]; FILTERS.regions=[]; FILTERS.baTypes=[]; FILTERS.agreement='any'; FILTERS.credits='any'; FILTERS.minEvents=0; FILTERS.q=''; render(); });
       } else if(action === 'open-audit'){
         el.addEventListener('click', function(){ UI.auditOpen = true; render(); });
       } else if(action === 'close-audit'){
