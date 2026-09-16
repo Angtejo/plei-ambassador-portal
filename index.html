@@ -8,6 +8,8 @@
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
 <style>
 :root{
   --bg:#F5F6F8;
@@ -78,17 +80,25 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
 .card{background:var(--surface);border-radius:var(--radius-lg);border:1px solid var(--border);box-shadow:var(--shadow-sm);}
 .card-pad{padding:24px;}
 
-.map-svg-wrap{position:relative;margin-bottom:18px;}
+.map-svg-wrap{position:relative;margin-bottom:14px;border-radius:var(--radius-md);overflow:hidden;border:1px solid var(--border);}
 .map-svg-wrap svg{display:block;width:100%;height:auto;}
-.map-region{cursor:pointer;opacity:0.82;transition:opacity .15s,filter .15s;}
-.map-region:hover,.map-region.active{opacity:1;filter:brightness(1.08);}
-.map-label{font-weight:800;font-size:19px;fill:#fff;pointer-events:none;text-anchor:middle;letter-spacing:0.5px;paint-order:stroke;stroke:rgba(0,0,0,0.28);stroke-width:3px;cursor:pointer;}
-.map-dot{fill:var(--accent);stroke:var(--bg);stroke-width:2;}
+.na-ocean{fill:#eaf3f8;}
+.na-landmass{fill:var(--surface-2);stroke:var(--border);stroke-width:1;}
+.pin{cursor:pointer;stroke:#fff;stroke-width:1.5;transition:r .12s;}
 .city-group{cursor:pointer;}
-.city-dot{stroke:#fff;stroke-width:1;transition:r .12s;}
-.city-label{fill:#fff;font-weight:600;text-anchor:start;pointer-events:none;paint-order:stroke;stroke:rgba(0,0,0,0.35);stroke-width:2.5px;dominant-baseline:middle;}
-.city-group:hover .city-dot{r:5;}
-.city-group:hover .city-label{fill:#fffbe0;}
+.city-group:hover .pin{r:7;}
+.pin-label{font-size:10.5px;font-weight:700;fill:var(--text);paint-order:stroke;stroke:#fff;stroke-width:3px;pointer-events:none;}
+.city-group:hover .pin-label{fill:var(--accent);}
+.map-fallback{padding:20px;color:var(--text-muted);font-size:13.5px;}
+.map-fallback-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;padding:0 4px 16px;}
+@media (max-width:700px){.map-fallback-grid{grid-template-columns:repeat(2,1fr);}}
+.map-fallback-col{font-size:13px;}
+.map-fallback-head{font-weight:800;font-size:12px;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;}
+.map-fallback-city{cursor:pointer;padding:3px 0;color:var(--text-muted);}
+.map-fallback-city:hover{color:var(--accent);}
+.map-unmapped-note{font-size:11.5px;color:var(--text-muted);padding:0 4px 4px;}
+.map-unmapped-city{cursor:pointer;text-decoration:underline;text-underline-offset:2px;}
+.map-unmapped-city:hover{color:var(--accent);}
 .stat-row{display:flex;gap:12px;margin-top:16px;flex-wrap:wrap;}
 .stat-tile{flex:1;min-width:120px;background:var(--surface-2);border-radius:var(--radius-md);padding:14px 16px;}
 .stat-num{font-size:22px;font-weight:800;}
@@ -96,8 +106,10 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
 .region-table{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;}
 @media (max-width:900px){.region-table{grid-template-columns:repeat(2,1fr);}}
 @media (max-width:520px){.region-table{grid-template-columns:1fr;}}
-.region-col{border-radius:var(--radius-md);overflow:hidden;border:1px solid var(--border);background:var(--surface-2);}
+.region-col{border-radius:var(--radius-md);overflow:hidden;border:1px solid var(--border);background:var(--surface-2);transition:box-shadow .12s;}
+.region-col.active{box-shadow:0 0 0 2px var(--accent) inset;}
 .region-col-head{padding:8px 12px;font-weight:800;font-size:12px;color:#fff;text-transform:uppercase;letter-spacing:0.4px;}
+.region-col-head[data-action]{cursor:pointer;}
 .region-col-body{padding:12px;}
 .region-col-name{font-weight:700;font-size:14px;}
 .region-col-sub{font-size:11.5px;color:var(--text-muted);margin-top:3px;}
@@ -248,6 +260,59 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
   var DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   var BASE_BA_TYPES = ['Content Creator','Event Organizer','Photographer','Affiliate Marketer','Adidas Brand Ambassadors','Eleven Brand Ambassadors'];
   var PAGES = ['home','apply','schedules','leaderboard','policies'];
+  var CITY_COORDS = {
+    'bay area':[-122.27,37.87],'san francisco':[-122.42,37.77],'los angeles':[-118.24,34.05],'san diego':[-117.16,32.72],
+    'phoenix':[-112.07,33.45],'sacramento':[-121.49,38.58],'seattle':[-122.33,47.61],'portland':[-122.68,45.52],
+    'las vegas':[-115.14,36.17],'denver':[-104.99,39.74],'salt lake city':[-111.89,40.76],'austin':[-97.74,30.27],
+    'san antonio':[-98.49,29.42],'dallas':[-96.80,32.78],'dallas | fort worth':[-96.80,32.78],'dallas/fort worth':[-96.80,32.78],
+    'dallas-fort worth':[-96.80,32.78],'fort worth':[-97.33,32.75],'houston':[-95.37,29.76],'oklahoma city':[-97.52,35.47],
+    'kansas city':[-94.58,39.10],'st. louis':[-90.20,38.63],'saint louis':[-90.20,38.63],'minneapolis':[-93.27,44.98],
+    'chicago':[-87.63,41.88],'milwaukee':[-87.91,43.04],'detroit':[-83.05,42.33],'indianapolis':[-86.16,39.77],
+    'columbus':[-82.99,39.96],'cincinnati':[-84.51,39.10],'cleveland':[-81.69,41.50],'nashville':[-86.78,36.16],
+    'memphis':[-90.05,35.15],'atlanta':[-84.39,33.75],'charlotte':[-80.84,35.23],'raleigh':[-78.64,35.78],
+    'greenville':[-82.39,34.85],'greenville sc':[-82.39,34.85],'greenville, sc':[-82.39,34.85],'columbia':[-81.03,34.00],
+    'orlando':[-81.38,28.54],'tampa':[-82.46,27.95],'south florida':[-80.19,25.76],'miami':[-80.19,25.76],
+    'fort lauderdale':[-80.14,26.12],'jacksonville':[-81.66,30.33],'new orleans':[-90.07,29.95],
+    'washington dc':[-77.04,38.91],'washington, dc':[-77.04,38.91],'baltimore':[-76.61,39.29],'philadelphia':[-75.16,39.95],
+    'new york':[-74.01,40.71],'new york city':[-74.01,40.71],'nyc':[-74.01,40.71],'boston':[-71.06,42.36],
+    'pittsburgh':[-79.99,40.44],'buffalo':[-78.88,42.89],
+    'toronto':[-79.38,43.65],'montreal':[-73.57,45.50],'ottawa':[-75.70,45.42],'vancouver':[-123.12,49.28],
+    'calgary':[-114.07,51.05],'edmonton':[-113.49,53.55],'winnipeg':[-97.14,49.90],'quebec city':[-71.21,46.81]
+  };
+  function normalizeCityKey(s){
+    return String(s||'').toLowerCase().replace(/\s+/g,' ').trim();
+  }
+  function findCityCoords(cityRaw){
+    var key = normalizeCityKey(cityRaw);
+    if(CITY_COORDS[key]) return CITY_COORDS[key];
+    var parts = key.split(/\s*[|\/]\s*/);
+    for(var i=0;i<parts.length;i++){ if(CITY_COORDS[parts[i]]) return CITY_COORDS[parts[i]]; }
+    var comma = key.split(',')[0].trim();
+    if(CITY_COORDS[comma]) return CITY_COORDS[comma];
+    return null;
+  }
+  var GEO = {loading:true, error:null, pathD:'', width:960, height:600};
+  function loadGeo(){
+    fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-50m.json').then(function(r){
+      if(!r.ok) throw new Error('map data request failed');
+      return r.json();
+    }).then(function(topo){
+      var geo = topojson.feature(topo, topo.objects.countries);
+      var features = geo.features.filter(function(f){ return f.id === '840' || f.id === '124'; });
+      var fc = {type:'FeatureCollection', features: features};
+      var projection = d3.geoMercator().fitSize([GEO.width, GEO.height], fc);
+      var pathGen = d3.geoPath(projection);
+      GEO.pathD = pathGen(fc);
+      GEO.projection = projection;
+      GEO.loading = false;
+      GEO.error = null;
+      render();
+    }).catch(function(err){
+      GEO.loading = false;
+      GEO.error = 'Map data could not be loaded (' + (err && err.message ? err.message : 'network error') + ').';
+      render();
+    });
+  }
   function pageFromHash(){
     var h = (location.hash||'').replace('#','').toLowerCase();
     return PAGES.indexOf(h) !== -1 ? h : 'home';
@@ -299,6 +364,8 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     UI.page = pageFromHash(); UI.selectedId = null; UI.error = ''; UI.formBaTypes = []; UI.filterPanelOpen = false;
     render();
   });
+
+  loadGeo();
 
   function isPleiEmail(user){
     return !!(user && user.email && /@plei\.com$/i.test(user.email) && user.emailVerified);
@@ -692,11 +759,15 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     STATE.members.forEach(function(m){ if(m.role === 'pm' && m.status !== 'inactive') names[m.name] = true; });
     return Object.keys(names).sort();
   }
-  var TEXT_MEASURE_CTX = null;
-  function measureTextWidth(text, fontPx){
-    if(!TEXT_MEASURE_CTX){ TEXT_MEASURE_CTX = document.createElement('canvas').getContext('2d'); }
-    TEXT_MEASURE_CTX.font = '600 ' + fontPx + 'px Inter, system-ui, sans-serif';
-    return TEXT_MEASURE_CTX.measureText(text).width;
+  function allCitiesWithRegion(){
+    var map = {};
+    STATE.members.forEach(function(m){
+      if(m.status === 'inactive' || !m.city || !m.city.trim()) return;
+      var city = m.city.trim();
+      if(!map[city]) map[city] = {city: city, region: m.region, n: 0};
+      map[city].n++;
+    });
+    return Object.keys(map).sort().map(function(k){ return map[k]; });
   }
 
   function allBaTypes(){
@@ -816,64 +887,64 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
   }
 
   function renderMap(){
-    var svgRegions = [
-      {key:'west', cx:150, cy:230, rx:150, ry:220},
-      {key:'central', cx:430, cy:230, rx:170, ry:230},
-      {key:'southeast', cx:640, cy:270, rx:92, ry:200},
-      {key:'northeast', cx:820, cy:180, rx:150, ry:170}
-    ];
-    var defs = '<defs><filter id="blob-soft" x="-40%" y="-40%" width="180%" height="180%">' +
-      '<feGaussianBlur stdDeviation="6"></feGaussianBlur></filter>' +
-      '<radialGradient id="ocean" cx="50%" cy="35%" r="75%">' +
-      '<stop offset="0%" stop-color="var(--surface-2)"></stop><stop offset="100%" stop-color="var(--surface)"></stop></radialGradient></defs>';
-    var bg = '<rect x="0" y="0" width="1000" height="460" fill="url(#ocean)"></rect>';
-    var shapes = svgRegions.map(function(r){
-      var activeClass = (FILTERS.regions.indexOf(r.key) !== -1) ? ' active' : '';
-      var cities = citiesForRegion(r.key);
-      var titleY = r.cy - r.ry + 46;
-      var listTop = titleY + 32;
-      var available = Math.max(0, (r.ry * 2) - 78);
-      var n = cities.length;
-      var rowH = n ? Math.min(24, Math.max(15, available / n)) : 24;
-      var fontPx = rowH < 17 ? 9 : (rowH < 20 ? 10 : 11);
-      var dotR = 3.2;
-      var cityMarkup = cities.map(function(city, i){
-        var y = listTop + i * rowH;
-        var w = measureTextWidth(city, fontPx);
-        var totalW = dotR * 2 + 6 + w;
-        var startX = r.cx - totalW / 2;
-        var dotX = startX + dotR;
-        var textX = startX + dotR * 2 + 6;
-        return '<g class="city-group" data-action="pick-city" data-value="' + escapeHtml(city) + '">' +
-          '<circle class="city-dot" cx="' + dotX + '" cy="' + y + '" r="' + dotR + '" fill="var(' + REGION_COLOR_VAR[r.key] + ')"></circle>' +
-          '<text class="city-label" x="' + textX + '" y="' + (y + fontPx/2.6) + '" font-size="' + fontPx + '">' + escapeHtml(city) + '</text>' +
+    var mapBody;
+    if(GEO.error){
+      mapBody = '<div class="map-fallback">' + escapeHtml(GEO.error) + ' Showing cities as a list instead:</div>' +
+        '<div class="map-fallback-grid">' + REGION_ORDER.map(function(key){
+          var cities = citiesForRegion(key);
+          return '<div class="map-fallback-col"><div class="map-fallback-head" style="color:var(' + REGION_COLOR_VAR[key] + ')">' + escapeHtml(regionName(key)) + '</div>' +
+            cities.map(function(c){ return '<div class="map-fallback-city" data-action="pick-city" data-value="' + escapeHtml(c) + '">' + escapeHtml(c) + '</div>'; }).join('') + '</div>';
+        }).join('') + '</div>';
+    } else if(GEO.loading){
+      mapBody = '<div class="map-fallback">Loading map…</div>';
+    } else {
+      var all = allCitiesWithRegion();
+      var unmapped = [];
+      var pins = all.map(function(c){
+        var coords = findCityCoords(c.city);
+        if(!coords){ unmapped.push(c); return ''; }
+        var xy = GEO.projection(coords);
+        if(!xy) { unmapped.push(c); return ''; }
+        var colorVar = REGION_COLOR_VAR[c.region] || '--accent';
+        var labelAnchor = xy[0] > GEO.width - 130 ? 'end' : 'start';
+        var labelDx = labelAnchor === 'end' ? -8 : 8;
+        return '<g class="city-group" data-action="pick-city" data-value="' + escapeHtml(c.city) + '">' +
+          '<circle class="pin" cx="' + xy[0] + '" cy="' + xy[1] + '" r="5" fill="var(' + colorVar + ')"></circle>' +
+          '<text class="pin-label" x="' + (xy[0] + labelDx) + '" y="' + (xy[1] + 3) + '" text-anchor="' + labelAnchor + '">' + escapeHtml(c.city) + '</text>' +
         '</g>';
       }).join('');
-      return '<ellipse class="map-region' + activeClass + '" filter="url(#blob-soft)" data-action="pick-region" data-value="' + r.key + '" cx="' + r.cx + '" cy="' + r.cy + '" rx="' + r.rx + '" ry="' + r.ry + '" fill="var(' + REGION_COLOR_VAR[r.key] + ')"></ellipse>' +
-        '<text class="map-label" x="' + r.cx + '" y="' + titleY + '" data-action="pick-region" data-value="' + r.key + '">' + escapeHtml(regionName(r.key).toUpperCase()) + '</text>' +
-        cityMarkup;
-    }).join('');
+      var svg = '<svg viewBox="0 0 ' + GEO.width + ' ' + GEO.height + '" width="100%">' +
+        '<rect x="0" y="0" width="' + GEO.width + '" height="' + GEO.height + '" class="na-ocean"></rect>' +
+        '<path d="' + GEO.pathD + '" class="na-landmass"></path>' +
+        pins +
+      '</svg>';
+      var unmappedNote = unmapped.length ? '<div class="map-unmapped-note">Not shown on the map yet (no coordinates on file) — click to filter the roster anyway: ' +
+        unmapped.map(function(c){ return '<span class="map-unmapped-city" data-action="pick-city" data-value="' + escapeHtml(c.city) + '">' + escapeHtml(c.city) + '</span>'; }).join(', ') + '</div>' : '';
+      mapBody = '<div class="map-svg-wrap">' + svg + '</div>' + unmappedNote;
+    }
 
     var cols = REGION_ORDER.map(function(key){
       var sups = supervisorsForRegion(key);
       return {
-        label: regionName(key), colorVar: REGION_COLOR_VAR[key],
+        key: key, label: regionName(key), colorVar: REGION_COLOR_VAR[key],
         name: sups.length ? sups.join(', ') : 'Unassigned',
         sub: regionMemberCount(key) + ' on team'
       };
     });
     var pms = programManagers();
-    cols.push({label:'Program Manager', colorVar:'--accent', name: pms.length ? pms.join(', ') : 'Unassigned', sub: 'Runs the program'});
+    cols.push({key:'', label:'Program Manager', colorVar:'--accent', name: pms.length ? pms.join(', ') : 'Unassigned', sub: 'Runs the program'});
     var tableHtml = cols.map(function(c){
-      return '<div class="region-col">' +
-        '<div class="region-col-head" style="background:var(' + c.colorVar + ')">' + escapeHtml(c.label) + '</div>' +
+      var activeClass = (c.key && FILTERS.regions.indexOf(c.key) !== -1) ? ' active' : '';
+      var headAttrs = c.key ? ' data-action="pick-region" data-value="' + c.key + '"' : '';
+      return '<div class="region-col' + activeClass + '">' +
+        '<div class="region-col-head"' + headAttrs + ' style="background:var(' + c.colorVar + ')">' + escapeHtml(c.label) + '</div>' +
         '<div class="region-col-body"><div class="region-col-name">' + escapeHtml(c.name) + '</div><div class="region-col-sub">' + escapeHtml(c.sub) + '</div></div>' +
       '</div>';
     }).join('');
 
     return '' +
       '<div class="card card-pad" style="margin-bottom:20px;">' +
-        '<div class="map-svg-wrap"><svg viewBox="0 0 1000 460" width="100%">' + defs + bg + shapes + '</svg></div>' +
+        mapBody +
         '<div class="region-table">' + tableHtml + '</div>' +
       '</div>';
   }
