@@ -196,6 +196,30 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
 .log-row{padding:10px 0;border-bottom:1px solid var(--border);font-size:13px;}
 .log-row:last-child{border-bottom:none;}
 .log-meta{color:var(--text-muted);font-size:11.5px;margin-top:2px;}
+.navbar{display:flex;gap:4px;margin-bottom:22px;border-bottom:1px solid var(--border);flex-wrap:wrap;}
+.nav-link{padding:10px 14px;font-size:13.5px;font-weight:700;color:var(--text-muted);text-decoration:none;border-bottom:2px solid transparent;cursor:pointer;margin-bottom:-1px;}
+.nav-link:hover{color:var(--text);}
+.nav-link.active{color:var(--accent);border-bottom-color:var(--accent);}
+.filter-trigger{position:relative;}
+.filter-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;margin-bottom:22px;box-shadow:var(--shadow-md);}
+.filter-panel-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:20px;}
+.filter-col-label{font-size:11px;font-weight:700;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:8px;}
+.filter-check{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--text);padding:4px 0;cursor:pointer;}
+.filter-panel-actions{display:flex;justify-content:space-between;align-items:center;margin-top:18px;padding-top:14px;border-top:1px solid var(--border);gap:10px;flex-wrap:wrap;}
+.add-type-row{display:flex;gap:6px;margin-top:8px;}
+.add-type-row input{flex:1;background:var(--surface-2);border:1px solid var(--border);color:var(--text);padding:7px 9px;border-radius:8px;font-size:12.5px;}
+.region-cities{font-size:11.5px;color:var(--text-faint);margin-top:3px;line-height:1.5;max-width:420px;}
+.batype-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;}
+.batype-check{display:flex;align-items:center;gap:6px;font-size:12.5px;background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:6px 12px;cursor:pointer;}
+.page-header{margin-bottom:20px;}
+.page-header h1{font-size:24px;margin:0 0 4px;}
+.apply-success{background:var(--accent-soft);color:var(--accent);border-radius:var(--radius-md);padding:16px;font-size:14px;}
+.policy-card{border:1px solid var(--border);border-radius:var(--radius-md);padding:18px;margin-bottom:14px;background:var(--surface);}
+.policy-title{font-weight:800;font-size:15px;margin-bottom:6px;}
+.policy-body{font-size:13.5px;color:var(--text-muted);white-space:pre-wrap;line-height:1.6;}
+.policy-actions{display:flex;gap:8px;margin-top:12px;}
+.application-row{border-bottom:1px solid var(--border);padding:12px 0;font-size:13px;}
+.application-row:last-child{border-bottom:none;}
 @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
 @keyframes modalIn{from{opacity:0;transform:translateY(8px) scale(.98);}to{opacity:1;transform:translateY(0) scale(1);}}
 .overlay{animation:fadeIn .12s ease;}
@@ -215,7 +239,18 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
   var ROLE_BADGE_CLASS = {ba:'badge-ba', captain:'badge-captain', supervisor:'badge-supervisor', pm:'badge-pm'};
   var REGION_ORDER = ['west','central','southeast','northeast'];
   var REGION_COLOR_VAR = {west:'--west', central:'--central', southeast:'--southeast', northeast:'--northeast'};
+  var REGION_LABELS = {west:'West', central:'Central', southeast:'Southeast', northeast:'Northeast'};
   var DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  var BASE_BA_TYPES = ['Content Creator','Event Organizer','Photographer','Affiliate Marketer','Adidas Brand Ambassadors','Eleven Brand Ambassadors'];
+  var PAGES = ['home','apply','schedules','leaderboard','policies'];
+  function pageFromHash(){
+    var h = (location.hash||'').replace('#','').toLowerCase();
+    return PAGES.indexOf(h) !== -1 ? h : 'home';
+  }
+  function regionName(key){
+    var r = STATE.regions[key];
+    return (r && r.name) || REGION_LABELS[key] || String(key||'');
+  }
 
   function escapeHtml(s){
     return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
@@ -234,17 +269,31 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     members: [],
     membersPrivate: {},
     auditLog: [],
+    baTypeOptions: [],
+    applications: [],
+    policies: [],
     schedule: {weekLabel:'This week', days: DAYS, assignments: {}}
   };
-  var LOADED = {regions:false, members:false, schedule:false};
+  var LOADED = {regions:false, members:false, schedule:false, baTypes:false, policies:false};
   var CURRENT_USER = null;
   var IS_PLEI_USER = false;
   var SCHEDULE_UNSUB = null;
   var PRIVATE_UNSUB = null;
   var AUDIT_UNSUB = null;
+  var APPLICATIONS_UNSUB = null;
+  var BOOTSTRAPPED_TYPES = false;
 
-  var FILTERS = {role:'all', region:'all', baType:'all', minEvents:0, showInactive:false, q:''};
-  var UI = {selectedId:null, adding:false, editingId:null, editingRegions:false, auditOpen:false, saving:false, seeding:false, importing:false, importOpen:false, importRows:null, importError:'', error:'', authError:''};
+  var FILTERS = {roles:[], regions:[], baTypes:[], agreement:'any', minEvents:0, showInactive:false, q:''};
+  var UI = {
+    page: pageFromHash(), selectedId:null, adding:false, editingId:null, editingRegions:false, auditOpen:false,
+    filterPanelOpen:false, formBaTypes:[], pendingNewTypes:[],
+    applySubmitted:false, addingPolicy:false, editingPolicyId:null,
+    saving:false, seeding:false, importing:false, importOpen:false, importRows:null, importError:'', error:'', authError:''
+  };
+  window.addEventListener('hashchange', function(){
+    UI.page = pageFromHash(); UI.selectedId = null; UI.error = ''; UI.formBaTypes = []; UI.filterPanelOpen = false;
+    render();
+  });
 
   function isPleiEmail(user){
     return !!(user && user.email && /@plei\.com$/i.test(user.email) && user.emailVerified);
@@ -268,9 +317,29 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     if(SCHEDULE_UNSUB){ SCHEDULE_UNSUB(); SCHEDULE_UNSUB = null; }
     if(PRIVATE_UNSUB){ PRIVATE_UNSUB(); PRIVATE_UNSUB = null; }
     if(AUDIT_UNSUB){ AUDIT_UNSUB(); AUDIT_UNSUB = null; }
+    if(APPLICATIONS_UNSUB){ APPLICATIONS_UNSUB(); APPLICATIONS_UNSUB = null; }
     LOADED.schedule = false;
     STATE.membersPrivate = {};
     STATE.auditLog = [];
+    STATE.applications = [];
+    if(IS_PLEI_USER && !BOOTSTRAPPED_TYPES){
+      BOOTSTRAPPED_TYPES = true;
+      db.collection('config').doc('baTypes').get().then(function(doc){
+        if(!doc.exists){
+          var seed = BASE_BA_TYPES.slice();
+          allBaTypes().forEach(function(t){ if(seed.indexOf(t) === -1) seed.push(t); });
+          db.collection('config').doc('baTypes').set({types: seed}, {merge:true}).catch(function(){});
+        }
+      }).catch(function(){});
+    }
+    if(IS_PLEI_USER){
+      APPLICATIONS_UNSUB = db.collection('applications').orderBy('submittedAt','desc').onSnapshot(function(snap){
+        var next = [];
+        snap.forEach(function(doc){ next.push(Object.assign({id:doc.id}, doc.data())); });
+        STATE.applications = next;
+        render();
+      }, function(){ render(); });
+    }
     if(IS_PLEI_USER){
       SCHEDULE_UNSUB = db.collection('schedule').doc('current').onSnapshot(function(doc){
         LOADED.schedule = true;
@@ -313,6 +382,21 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     LOADED.members = true;
     render();
   }, function(){ LOADED.members = true; render(); });
+
+  db.collection('config').doc('baTypes').onSnapshot(function(doc){
+    var data = doc.exists ? doc.data() : {};
+    STATE.baTypeOptions = (data.types || []).slice().sort();
+    LOADED.baTypes = true;
+    render();
+  }, function(){ LOADED.baTypes = true; render(); });
+
+  db.collection('policies').orderBy('order','asc').onSnapshot(function(snap){
+    var next = [];
+    snap.forEach(function(doc){ next.push(Object.assign({id: doc.id}, doc.data())); });
+    STATE.policies = next;
+    LOADED.policies = true;
+    render();
+  }, function(){ LOADED.policies = true; render(); });
 
   function seedDefaults(){
     UI.seeding = true; UI.error=''; render();
@@ -499,8 +583,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     if(IS_PLEI_USER){ cols = cols.concat(['Phone','Email','Instagram/TikTok','Work Authorization','Mailing Address','Bib/Ball Inventory','Agreement Signed']); }
     var lines = [cols.map(csvEscape).join(',')];
     members.forEach(function(m){
-      var region = STATE.regions[m.region] || {name:m.region};
-      var row = [m.name, m.city||'', region.name||m.region, ROLE_LABELS[m.role]||m.role, m.reportsTo||'', (m.baTypes||[]).join('; '), m.status==='inactive'?'Inactive':'Active', m.eventsWorked||0];
+      var row = [m.name, m.city||'', regionName(m.region), ROLE_LABELS[m.role]||m.role, m.reportsTo||'', (m.baTypes||[]).join('; '), m.status==='inactive'?'Inactive':'Active', m.eventsWorked||0];
       if(IS_PLEI_USER){
         var priv = STATE.membersPrivate[m.id] || {};
         row = row.concat([priv.phone||'', priv.email||'', priv.instagram||'', priv.workAuth||'', priv.mailingAddress||'', priv.bibBallInventory||'', priv.agreementSigned===true?'Yes':(priv.agreementSigned===false?'No':'')]);
@@ -514,6 +597,37 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
   }
+
+  function addBaType(tag){
+    tag = String(tag||'').trim();
+    if(!tag) return;
+    if(UI.pendingNewTypes.indexOf(tag) === -1) UI.pendingNewTypes.push(tag);
+    db.collection('config').doc('baTypes').set({types: firebase.firestore.FieldValue.arrayUnion(tag)}, {merge:true}).catch(function(){});
+  }
+  function allKnownBaTypes(){
+    var set = {};
+    STATE.baTypeOptions.forEach(function(t){ set[t] = true; });
+    UI.pendingNewTypes.forEach(function(t){ set[t] = true; });
+    allBaTypes().forEach(function(t){ set[t] = true; });
+    return Object.keys(set).sort();
+  }
+
+  function submitApplication(data){
+    UI.saving = true; UI.error = ''; render();
+    data.submittedAt = firebase.firestore.FieldValue.serverTimestamp();
+    data.status = 'new';
+    db.collection('applications').add(data).then(function(){
+      UI.saving = false; UI.applySubmitted = true; render();
+    }).catch(function(){
+      UI.saving = false; UI.error = 'Could not submit — please try again.'; render();
+    });
+  }
+
+  function savePolicy(id, data){
+    if(id){ withSaving(db.collection('policies').doc(id).set(data, {merge:true})); }
+    else { withSaving(db.collection('policies').add(data)); }
+  }
+  function deletePolicy(id){ withSaving(db.collection('policies').doc(id).delete()); }
 
   function computeStats(){
     var active = STATE.members.filter(function(m){ return m.status !== 'inactive'; });
@@ -531,12 +645,22 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     };
   }
 
+  function activeFilterCount(){
+    return FILTERS.roles.length + FILTERS.regions.length + FILTERS.baTypes.length +
+      (FILTERS.agreement !== 'any' ? 1 : 0) + (FILTERS.minEvents > 0 ? 1 : 0) + (FILTERS.showInactive ? 1 : 0);
+  }
   function filteredMembers(){
     return STATE.members.filter(function(m){
       if(!FILTERS.showInactive && m.status === 'inactive') return false;
-      if(FILTERS.role !== 'all' && m.role !== FILTERS.role) return false;
-      if(FILTERS.region !== 'all' && m.region !== FILTERS.region) return false;
-      if(FILTERS.baType !== 'all' && (m.baTypes||[]).indexOf(FILTERS.baType) === -1) return false;
+      if(FILTERS.roles.length && FILTERS.roles.indexOf(m.role) === -1) return false;
+      if(FILTERS.regions.length && FILTERS.regions.indexOf(m.region) === -1) return false;
+      if(FILTERS.baTypes.length && !FILTERS.baTypes.some(function(t){ return (m.baTypes||[]).indexOf(t) !== -1; })) return false;
+      if(FILTERS.agreement !== 'any' && IS_PLEI_USER){
+        var priv = STATE.membersPrivate[m.id] || {};
+        var signed = priv.agreementSigned === true;
+        if(FILTERS.agreement === 'signed' && !signed) return false;
+        if(FILTERS.agreement === 'unsigned' && signed) return false;
+      }
       if(FILTERS.minEvents > 0 && (m.eventsWorked||0) < FILTERS.minEvents) return false;
       if(FILTERS.q){
         var q = FILTERS.q.toLowerCase();
@@ -551,6 +675,12 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     var set = {};
     STATE.members.forEach(function(m){ if(m.city) set[m.city.trim().toLowerCase()] = 1; });
     return Object.keys(set).length;
+  }
+
+  function citiesForRegion(key){
+    var set = {};
+    STATE.members.forEach(function(m){ if(m.region === key && m.city && m.city.trim()) set[m.city.trim()] = true; });
+    return Object.keys(set).sort();
   }
 
   function allBaTypes(){
@@ -583,6 +713,20 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
       '</div>';
   }
 
+  function renderNav(){
+    var links = [
+      {key:'home', label:'Home'},
+      {key:'apply', label:'Become an Ambassador'},
+      {key:'schedules', label:'Schedules'},
+      {key:'leaderboard', label:'Leaderboard'},
+      {key:'policies', label:'Policies'}
+    ];
+    var html = links.map(function(l){
+      return '<a class="nav-link' + (UI.page===l.key?' active':'') + '" href="#' + l.key + '">' + escapeHtml(l.label) + '</a>';
+    }).join('');
+    return '<div class="navbar">' + html + '</div>';
+  }
+
   function renderBanner(){
     if(IS_PLEI_USER) return '';
     if(CURRENT_USER){
@@ -606,31 +750,48 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
   }
 
   function renderFilterBar(){
-    var roleBtns = ['all','ba','captain','supervisor','pm'].map(function(r){
-      var label = r === 'all' ? 'All Roles' : ROLE_LABELS[r];
-      return '<button class="pill-btn' + (FILTERS.role===r?' active':'') + '" data-action="filter-role" data-value="' + r + '">' + escapeHtml(label) + '</button>';
+    var n = activeFilterCount();
+    return '' +
+      '<div class="filterbar">' +
+        '<input class="search-input" type="text" placeholder="Search name or city…" value="' + escapeHtml(FILTERS.q) + '" data-action="search">' +
+        '<button class="pill-btn filter-trigger' + (UI.filterPanelOpen?' active':'') + '" data-action="toggle-filter-panel">Filters' + (n ? ' (' + n + ')' : '') + '</button>' +
+        (n ? '<button class="pill-btn" data-action="clear-filters">Clear filters</button>' : '') +
+      '</div>' +
+      renderFilterPanel();
+  }
+
+  function renderFilterPanel(){
+    if(!UI.filterPanelOpen) return '';
+    var roleChecks = ['ba','captain','supervisor','pm'].map(function(r){
+      return '<label class="filter-check"><input type="checkbox" data-action="filter-role-check" data-value="' + r + '"' + (FILTERS.roles.indexOf(r)!==-1?' checked':'') + '> ' + escapeHtml(ROLE_LABELS[r]) + '</label>';
     }).join('');
-    var regionBtns = ['all'].concat(REGION_ORDER).map(function(r){
-      var label = r === 'all' ? 'All Regions' : (STATE.regions[r] ? STATE.regions[r].name : r);
-      return '<button class="pill-btn' + (FILTERS.region===r?' active':'') + '" data-action="filter-region" data-value="' + r + '">' + escapeHtml(label) + '</button>';
+    var regionChecks = REGION_ORDER.map(function(r){
+      return '<label class="filter-check"><input type="checkbox" data-action="filter-region-check" data-value="' + r + '"' + (FILTERS.regions.indexOf(r)!==-1?' checked':'') + '> ' + escapeHtml(regionName(r)) + '</label>';
     }).join('');
-    var types = allBaTypes();
-    var typeBtns = types.length ? ['all'].concat(types).map(function(t){
-      var label = t === 'all' ? 'All Types' : t;
-      return '<button class="pill-btn' + (FILTERS.baType===t?' active':'') + '" data-action="filter-type" data-value="' + escapeHtml(t) + '">' + escapeHtml(label) + '</button>';
-    }).join('') : '';
+    var types = allKnownBaTypes();
+    var typeChecks = types.map(function(t){
+      return '<label class="filter-check"><input type="checkbox" data-action="filter-batype-check" data-value="' + escapeHtml(t) + '"' + (FILTERS.baTypes.indexOf(t)!==-1?' checked':'') + '> ' + escapeHtml(t) + '</label>';
+    }).join('');
+    var addType = IS_PLEI_USER ? '<div class="add-type-row"><input type="text" id="f-filter-newtype" placeholder="New type…"><button class="btn secondary" data-action="add-batype-filter">Add</button></div>' : '';
     var minEventsSelect = '<select class="search-input" data-action="filter-min-events">' +
       [0,5,10,20,50].map(function(n){ return '<option value="' + n + '"' + (FILTERS.minEvents===n?' selected':'') + '>' + (n===0?'Any # events':n + '+ events') + '</option>'; }).join('') +
       '</select>';
-    var inactiveToggle = IS_PLEI_USER ? '<label class="checkbox-row"><input type="checkbox" data-action="toggle-inactive"' + (FILTERS.showInactive?' checked':'') + '> Show inactive</label>' : '';
+    var agreementSelect = IS_PLEI_USER ? '<select class="search-input" data-action="filter-agreement">' +
+      ['any','signed','unsigned'].map(function(v){ var label = v==='any' ? 'Any agreement status' : (v==='signed' ? 'Agreement signed' : 'Agreement not signed'); return '<option value="' + v + '"' + (FILTERS.agreement===v?' selected':'') + '>' + label + '</option>'; }).join('') +
+      '</select>' : '';
+    var inactiveToggle = IS_PLEI_USER ? '<label class="filter-check"><input type="checkbox" data-action="toggle-inactive"' + (FILTERS.showInactive?' checked':'') + '> Show inactive</label>' : '';
     return '' +
-      '<div class="filterbar">' +
-        '<div class="filtergroup">' + roleBtns + '</div>' +
-        '<div class="filtergroup">' + regionBtns + '</div>' +
-        (typeBtns ? '<div class="filtergroup">' + typeBtns + '</div>' : '') +
-        minEventsSelect +
-        '<input class="search-input" type="text" placeholder="Search name or city…" value="' + escapeHtml(FILTERS.q) + '" data-action="search">' +
-        inactiveToggle +
+      '<div class="filter-panel">' +
+        '<div class="filter-panel-grid">' +
+          '<div><div class="filter-col-label">Position</div>' + roleChecks + '</div>' +
+          '<div><div class="filter-col-label">Region</div>' + regionChecks + '</div>' +
+          '<div><div class="filter-col-label">Type of BA</div>' + typeChecks + addType + '</div>' +
+          '<div><div class="filter-col-label">Other</div>' + minEventsSelect + (agreementSelect ? '<div style="margin-top:8px;">' + agreementSelect + '</div>' : '') + (inactiveToggle ? '<div style="margin-top:8px;">' + inactiveToggle + '</div>' : '') + '</div>' +
+        '</div>' +
+        '<div class="filter-panel-actions">' +
+          '<span class="sub" style="margin:0;">' + filteredMembers().length + ' match' + (filteredMembers().length===1?'':'es') + '</span>' +
+          '<button class="btn" data-action="toggle-filter-panel">Done</button>' +
+        '</div>' +
       '</div>';
   }
 
@@ -646,18 +807,19 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
       {key:'northeast', cx:820, cy:180, rx:150, ry:170, lx:820, ly:136}
     ];
     var shapes = svgRegions.map(function(r){
-      var region = STATE.regions[r.key] || {name: r.key};
-      var activeClass = (FILTERS.region === r.key) ? ' active' : '';
+      var activeClass = (FILTERS.regions.indexOf(r.key) !== -1) ? ' active' : '';
       return '<ellipse class="map-region' + activeClass + '" data-action="pick-region" data-value="' + r.key + '" cx="' + r.cx + '" cy="' + r.cy + '" rx="' + r.rx + '" ry="' + r.ry + '" fill="var(' + REGION_COLOR_VAR[r.key] + ')"></ellipse>' +
-        '<text class="map-label" x="' + r.lx + '" y="' + r.ly + '" data-action="pick-region" data-value="' + r.key + '">' + escapeHtml(String(region.name||'').toUpperCase()) + '</text>' +
+        '<text class="map-label" x="' + r.lx + '" y="' + r.ly + '" data-action="pick-region" data-value="' + r.key + '">' + escapeHtml(regionName(r.key).toUpperCase()) + '</text>' +
         '<circle class="map-dot" cx="' + r.cx + '" cy="' + (r.ly + 22) + '" r="7"></circle>';
     }).join('');
 
     var leaders = REGION_ORDER.map(function(key){
-      var region = STATE.regions[key] || {name:key, supervisor:''};
+      var region = STATE.regions[key] || {supervisor:''};
+      var cities = citiesForRegion(key);
       return '<div class="leader-row">' +
-        '<div><span class="leader-region-dot" style="background:var(' + REGION_COLOR_VAR[key] + ')"></span><span class="leader-name">' + escapeHtml(region.name||key) + '</span>' +
-        '<div class="leader-sub" style="margin-left:16px">' + escapeHtml(region.supervisor || 'Unassigned') + ' · ' + regionMemberCount(key) + ' on team</div></div>' +
+        '<div><span class="leader-region-dot" style="background:var(' + REGION_COLOR_VAR[key] + ')"></span><span class="leader-name">' + escapeHtml(regionName(key)) + '</span>' +
+        '<div class="leader-sub" style="margin-left:16px">' + escapeHtml(region.supervisor || 'Unassigned') + ' · ' + regionMemberCount(key) + ' on team</div>' +
+        (cities.length ? '<div class="region-cities" style="margin-left:16px">' + escapeHtml(cities.join(', ')) + '</div>' : '') + '</div>' +
         (IS_PLEI_USER ? '<button class="icon-btn" data-action="edit-region" data-value="' + key + '" title="Edit region leader">✎</button>' : '') +
       '</div>';
     }).join('');
@@ -668,7 +830,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
           '<div class="map-svg-wrap"><svg viewBox="0 0 1000 460" width="100%">' + shapes + '</svg></div>' +
         '</div>' +
         '<div class="card card-pad">' +
-          '<div class="section-head" style="margin-bottom:6px;"><h2 style="font-size:15px;">Region Leaders</h2></div>' +
+          '<div class="section-head" style="margin-bottom:6px;"><h2 style="font-size:15px;">Regions</h2></div>' +
           '<div class="leaders-list">' + leaders + '</div>' +
         '</div>' +
       '</div>';
@@ -677,12 +839,11 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
   function renderRoster(){
     var members = filteredMembers();
     var cards = members.map(function(m){
-      var region = STATE.regions[m.region] || {name:m.region};
       var typeTags = (m.baTypes||[]).map(function(t){ return '<span class="tag">' + escapeHtml(t) + '</span>'; }).join('');
       return '<div class="member-card" data-action="open-member" data-value="' + m.id + '">' +
         '<div class="member-top">' +
           '<div class="avatar">' + escapeHtml(initials(m.name)) + '</div>' +
-          '<div><div class="member-name">' + escapeHtml(m.name) + '</div><div class="member-city">' + escapeHtml(m.city || region.name || '') + '</div></div>' +
+          '<div><div class="member-name">' + escapeHtml(m.name) + '</div><div class="member-city">' + escapeHtml(m.city || regionName(m.region) || '') + '</div></div>' +
         '</div>' +
         (typeTags ? '<div class="tag-row" style="margin:12px 0 0;">' + typeTags + '</div>' : '') +
         '<div class="member-meta">' +
@@ -693,7 +854,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     }).join('');
     var exportBtn = STATE.members.length ? '<button class="btn secondary" data-action="export-csv">Export CSV</button>' : '';
     var addBtn = exportBtn + (IS_PLEI_USER ? '<button class="btn secondary" data-action="open-import">Import roster (CSV)</button><button class="btn" data-action="add-member">+ Add member</button>' : '');
-    var filtersActive = FILTERS.role!=='all' || FILTERS.region!=='all' || FILTERS.baType!=='all' || FILTERS.minEvents>0 || !!FILTERS.q;
+    var filtersActive = activeFilterCount() > 0 || !!FILTERS.q;
     var emptyBody;
     if(!LOADED.regions || !LOADED.members){
       emptyBody = '<div class="empty-note">Loading…</div>';
@@ -739,9 +900,9 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
   }
 
   function renderLeaderboard(){
-    var sorted = STATE.members.slice().sort(function(a,b){ return (b.eventsWorked||0) - (a.eventsWorked||0); });
+    var sorted = STATE.members.filter(function(m){ return m.status !== 'inactive'; }).sort(function(a,b){ return (b.eventsWorked||0) - (a.eventsWorked||0); });
     var medals = ['🥇','🥈','🥉'];
-    var items = sorted.slice(0,8).map(function(m,i){
+    var items = sorted.map(function(m,i){
       var warn = (m.eventsWorked||0) === 0;
       return '<div class="leader-item' + (warn?' warn':'') + '">' +
         '<span><span class="rank">' + (medals[i] || (i+1)+'.') + '</span>' + escapeHtml(m.name) + (warn ? ' — needs outreach' : '') + '</span>' +
@@ -760,7 +921,6 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     if(!UI.selectedId) return '';
     var m = STATE.members.filter(function(x){ return x.id === UI.selectedId; })[0];
     if(!m) return '';
-    var region = STATE.regions[m.region] || {name:m.region};
     var tags = '<span class="badge ' + ROLE_BADGE_CLASS[m.role] + (m.status==='inactive'?' badge-inactive':'') + '">' + (m.status==='inactive' ? 'Inactive' : escapeHtml(ROLE_LABELS[m.role])) + '</span>';
     (m.baTypes||[]).forEach(function(t){ tags += '<span class="tag">' + escapeHtml(t) + '</span>'; });
     if(m.profession){ tags += '<span class="tag">' + escapeHtml(m.profession) + '</span>'; }
@@ -769,15 +929,17 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     var contactBody = '';
     if(IS_PLEI_USER){
       var priv = STATE.membersPrivate[m.id] || {};
+      var agreementVal = priv.agreementSigned === true ? 'Yes' : (priv.agreementSigned === false ? 'No' : '—');
+      var agreementHtml = priv.agreementLink ? '<a href="' + escapeHtml(priv.agreementLink) + '" target="_blank" rel="noopener">' + escapeHtml(agreementVal) + ' — view agreement ↗</a>' : escapeHtml(agreementVal);
       var kv = [
         ['Phone', priv.phone], ['Email', priv.email], ['Mailing address', priv.mailingAddress],
         ['Work authorization', priv.workAuth], ['Instagram/TikTok', priv.instagram],
         ['Bib/ball inventory', priv.bibBallInventory],
-        ['Agreement signed', priv.agreementSigned === true ? 'Yes' : (priv.agreementSigned === false ? 'No' : '—')]
+        ['Agreement signed', priv.agreementSigned != null || priv.agreementLink ? agreementHtml : '']
       ].filter(function(pair){ return pair[1]; });
       if(kv.length){
         contactBody = '<div class="section-label">Contact &amp; Admin</div>' +
-          kv.map(function(pair){ return '<div class="kv-row"><span class="k">' + pair[0] + '</span><span class="v">' + escapeHtml(pair[1]) + '</span></div>'; }).join('');
+          kv.map(function(pair){ return '<div class="kv-row"><span class="k">' + pair[0] + '</span><span class="v">' + (pair[0]==='Agreement signed' ? pair[1] : escapeHtml(pair[1])) + '</span></div>'; }).join('');
       }
     }
     var weekBody;
@@ -805,13 +967,13 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
             '<div class="modal-header">' +
               '<div class="modal-avatar">' + escapeHtml(initials(m.name)) + '</div>' +
               '<div class="modal-heading"><h2>' + escapeHtml(m.name) + '</h2>' +
-              '<div class="sub">' + escapeHtml(m.city ? m.city + ' · ' : '') + escapeHtml(region.name||'') + ' Region</div></div>' +
+              '<div class="sub">' + escapeHtml(m.city ? m.city + ' · ' : '') + escapeHtml(regionName(m.region)) + ' Region</div></div>' +
               '<button class="icon-btn" data-action="close-modal" title="Close">✕</button>' +
             '</div>' +
             '<div class="tag-row">' + tags + '</div>' +
             '<div class="stat-row">' +
               '<div class="stat-tile"><div class="stat-num tabular">' + (m.eventsWorked||0) + '</div><div class="stat-label">Events worked</div></div>' +
-              '<div class="stat-tile"><div class="stat-num">' + escapeHtml(region.name||'—') + '</div><div class="stat-label">Region</div></div>' +
+              '<div class="stat-tile"><div class="stat-num">' + escapeHtml(regionName(m.region)||'—') + '</div><div class="stat-label">Region</div></div>' +
               '<div class="stat-tile"><div class="stat-num">' + escapeHtml(m.startDate || '—') + '</div><div class="stat-label">On team since</div></div>' +
             '</div>' +
             '<div class="section-label">This Week</div>' +
@@ -829,8 +991,11 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     var editing = UI.editingId ? STATE.members.filter(function(x){ return x.id === UI.editingId; })[0] : null;
     var m = editing || {name:'',region:'central',role:'ba',city:'',startDate:'',experience:'',profession:'',eventsWorked:0,reportsTo:'',baTypes:[],status:'active'};
     var priv = (editing && STATE.membersPrivate[editing.id]) || {};
-    var regionOpts = REGION_ORDER.map(function(r){ return '<option value="' + r + '"' + (m.region===r?' selected':'') + '>' + ((STATE.regions[r]&&STATE.regions[r].name)||r) + '</option>'; }).join('');
+    var regionOpts = REGION_ORDER.map(function(r){ return '<option value="' + r + '"' + (m.region===r?' selected':'') + '>' + escapeHtml(regionName(r)) + '</option>'; }).join('');
     var roleOpts = ['ba','captain','supervisor','pm'].map(function(r){ return '<option value="' + r + '"' + (m.role===r?' selected':'') + '>' + ROLE_LABELS[r] + '</option>'; }).join('');
+    var batypeChecks = allKnownBaTypes().map(function(t){
+      return '<label class="batype-check"><input type="checkbox" data-action="toggle-form-batype" data-value="' + escapeHtml(t) + '"' + (UI.formBaTypes.indexOf(t)!==-1?' checked':'') + '> ' + escapeHtml(t) + '</label>';
+    }).join('');
     return '' +
       '<div class="overlay" data-action="close-form">' +
         '<div class="modal" onclick="event.stopPropagation()">' +
@@ -842,7 +1007,8 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
               '<div class="form-field"><label>Position</label><select id="f-role">' + roleOpts + '</select></div>' +
               '<div class="form-field"><label>City</label><input id="f-city" type="text" value="' + escapeHtml(m.city) + '"></div>' +
               '<div class="form-field"><label>Reports to</label><input id="f-reports-to" type="text" value="' + escapeHtml(m.reportsTo||'') + '"></div>' +
-              '<div class="form-field"><label>Type of BA (comma-separated)</label><input id="f-batypes" type="text" placeholder="Content Creator, Event Organizer" value="' + escapeHtml((m.baTypes||[]).join(', ')) + '"></div>' +
+              '<div class="form-field full"><label>Type of BA</label><div class="batype-grid">' + batypeChecks + '</div>' +
+                '<div class="add-type-row"><input type="text" id="f-newbatype" placeholder="New type…"><button type="button" class="btn secondary" data-action="add-batype-form">Add</button></div></div>' +
               '<div class="form-field"><label>Start date</label><input id="f-start" type="text" placeholder="e.g. Feb 2025" value="' + escapeHtml(m.startDate) + '"></div>' +
               '<div class="form-field"><label>Profession</label><input id="f-profession" type="text" value="' + escapeHtml(m.profession) + '"></div>' +
               '<div class="form-field"><label>Events worked</label><input id="f-events" type="number" min="0" value="' + (m.eventsWorked||0) + '"></div>' +
@@ -858,6 +1024,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
               '<div class="form-field full"><label>Mailing address</label><input id="f-address" type="text" value="' + escapeHtml(priv.mailingAddress||'') + '"></div>' +
               '<div class="form-field"><label>Bib/ball inventory</label><input id="f-inventory" type="text" value="' + escapeHtml(priv.bibBallInventory||'') + '"></div>' +
               '<div class="form-field"><label>Agreement signed</label><select id="f-agreement"><option value="yes"' + (priv.agreementSigned?' selected':'') + '>Yes</option><option value="no"' + (!priv.agreementSigned?' selected':'') + '>No</option></select></div>' +
+              '<div class="form-field full"><label>Agreement link (Google Drive, Dropbox, etc.)</label><input id="f-agreement-link" type="text" placeholder="https://…" value="' + escapeHtml(priv.agreementLink||'') + '"></div>' +
             '</div>' +
             '<div class="modal-actions">' +
               '<button class="btn" data-action="save-member" data-value="' + (editing ? editing.id : '') + '">Save</button>' +
@@ -899,8 +1066,8 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
   function renderRegionForm(){
     if(!UI.editingRegions) return '';
     var rows = REGION_ORDER.map(function(key){
-      var region = STATE.regions[key] || {name:key, supervisor:''};
-      return '<div class="form-field full"><label>' + (region.name||key) + ' supervisor</label><input data-region-input="' + key + '" type="text" value="' + escapeHtml(region.supervisor||'') + '"></div>';
+      var region = STATE.regions[key] || {supervisor:''};
+      return '<div class="form-field full"><label>' + escapeHtml(regionName(key)) + ' supervisor</label><input data-region-input="' + key + '" type="text" value="' + escapeHtml(region.supervisor||'') + '"></div>';
     }).join('');
     return '' +
       '<div class="overlay" data-action="close-region-form">' +
@@ -939,22 +1106,119 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
       '</div>';
   }
 
-  function render(){
-    var html = '' +
-      renderTopBar() +
-      renderBanner() +
+  function renderHomePage(){
+    return '' +
       renderGlance() +
       renderFilterBar() +
       renderMap() +
-      renderRoster() +
-      '<div class="bottom-layout">' + renderSchedule() + renderLeaderboard() + '</div>' +
-      (UI.error ? '<div class="error-note">' + escapeHtml(UI.error) + '</div>' : '') +
+      renderRoster();
+  }
+
+  function renderSchedulesPage(){
+    return '<div class="page-header"><h1>Schedules</h1><p class="sub">Weekly assignments for the team — Plei team and regional supervisors can edit.</p></div>' + renderSchedule();
+  }
+
+  function renderLeaderboardPage(){
+    return '<div class="page-header"><h1>Leaderboard</h1><p class="sub">Events worked, all-time count.</p></div>' + renderLeaderboard();
+  }
+
+  function renderApplyPage(){
+    if(UI.applySubmitted){
+      return '<div class="page-header"><h1>Become an Ambassador</h1></div>' +
+        '<div class="apply-success">Thanks for applying! A regional supervisor will reach out soon.</div>' +
+        '<button class="btn secondary" style="margin-top:16px;" data-action="apply-again">Submit another response</button>';
+    }
+    var regionOpts = REGION_ORDER.map(function(r){ return '<option value="' + r + '">' + escapeHtml(regionName(r)) + '</option>'; }).join('');
+    var typeChecks = allKnownBaTypes().map(function(t){
+      return '<label class="batype-check"><input type="checkbox" data-action="toggle-apply-batype" data-value="' + escapeHtml(t) + '"' + (UI.formBaTypes.indexOf(t)!==-1?' checked':'') + '> ' + escapeHtml(t) + '</label>';
+    }).join('');
+    var form = '' +
+      '<div class="card card-pad">' +
+        '<div class="form-grid">' +
+          '<div class="form-field full"><label>Name</label><input id="ap-name" type="text"></div>' +
+          '<div class="form-field"><label>Email</label><input id="ap-email" type="text"></div>' +
+          '<div class="form-field"><label>Phone</label><input id="ap-phone" type="text"></div>' +
+          '<div class="form-field"><label>City</label><input id="ap-city" type="text"></div>' +
+          '<div class="form-field"><label>Region</label><select id="ap-region">' + regionOpts + '</select></div>' +
+          '<div class="form-field full"><label>Instagram/TikTok</label><input id="ap-instagram" type="text"></div>' +
+          '<div class="form-field full"><label>Type of BA you\'re interested in</label><div class="batype-grid">' + typeChecks + '</div></div>' +
+          '<div class="form-field full"><label>Why do you want to join?</label><textarea id="ap-about"></textarea></div>' +
+        '</div>' +
+        (UI.error ? '<div class="error-note">' + escapeHtml(UI.error) + '</div>' : '') +
+        '<div class="modal-actions"><button class="btn" data-action="submit-application"' + (UI.saving?' disabled':'') + '>' + (UI.saving?'Submitting…':'Submit application') + '</button></div>' +
+      '</div>';
+    var reviewList = '';
+    if(IS_PLEI_USER){
+      var rows = STATE.applications.map(function(a){
+        var when = (a.submittedAt && a.submittedAt.toDate) ? a.submittedAt.toDate().toLocaleDateString() : '';
+        return '<div class="application-row"><strong>' + escapeHtml(a.name||'') + '</strong> — ' + escapeHtml(regionName(a.region)) + (a.city ? ', ' + escapeHtml(a.city) : '') + '<div class="log-meta">' + escapeHtml(a.email||'') + (a.phone ? ' · ' + escapeHtml(a.phone) : '') + (a.instagram ? ' · ' + escapeHtml(a.instagram) : '') + '</div>' +
+          ((a.baTypes||[]).length ? '<div class="log-meta">Interested in: ' + escapeHtml((a.baTypes||[]).join(', ')) + '</div>' : '') +
+          (a.about ? '<div class="log-meta">' + escapeHtml(a.about) + '</div>' : '') +
+          '<div class="log-meta">' + escapeHtml(when) + '</div></div>';
+      }).join('');
+      reviewList = '<div class="section-label" style="margin-top:28px;">Applications Received (' + STATE.applications.length + ')</div>' +
+        '<div class="card card-pad">' + (rows || '<div class="empty-note">No applications yet.</div>') + '</div>';
+    }
+    return '<div class="page-header"><h1>Become an Ambassador</h1><p class="sub">Apply to join the Plei Brand Ambassador Program.</p></div>' + form + reviewList;
+  }
+
+  function renderPoliciesPage(){
+    var sorted = STATE.policies.slice().sort(function(a,b){ return (a.order||0) - (b.order||0); });
+    var cards = sorted.map(function(p){
+      var actions = IS_PLEI_USER ? '<div class="policy-actions">' +
+        '<button class="btn secondary" data-action="edit-policy" data-value="' + p.id + '">Edit</button>' +
+        '<button class="btn danger" data-action="delete-policy" data-value="' + p.id + '">Delete</button>' +
+      '</div>' : '';
+      return '<div class="policy-card"><div class="policy-title">' + escapeHtml(p.title||'') + '</div><div class="policy-body">' + escapeHtml(p.body||'') + '</div>' + actions + '</div>';
+    }).join('');
+    var addBtn = IS_PLEI_USER ? '<button class="btn" data-action="add-policy">+ Add policy</button>' : '';
+    return '<div class="page-header"><div class="section-head"><h1 style="margin:0;">Policies</h1>' + addBtn + '</div><p class="sub">Q&amp;A, rules, and standards for the program.</p></div>' +
+      (cards || '<div class="empty-note">No policies published yet.</div>');
+  }
+
+  function renderPolicyForm(){
+    if(!UI.addingPolicy && !UI.editingPolicyId) return '';
+    var editing = UI.editingPolicyId ? STATE.policies.filter(function(x){ return x.id === UI.editingPolicyId; })[0] : null;
+    var p = editing || {title:'', body:'', order: STATE.policies.length};
+    return '' +
+      '<div class="overlay" data-action="close-policy-form">' +
+        '<div class="modal" onclick="event.stopPropagation()">' +
+          '<div class="modal-body">' +
+            '<h2 style="margin-top:0;">' + (editing ? 'Edit policy' : 'Add policy') + '</h2>' +
+            '<div class="form-grid">' +
+              '<div class="form-field full"><label>Title</label><input id="pol-title" type="text" value="' + escapeHtml(p.title) + '"></div>' +
+              '<div class="form-field full"><label>Body</label><textarea id="pol-body" style="min-height:160px;">' + escapeHtml(p.body) + '</textarea></div>' +
+              '<div class="form-field"><label>Order</label><input id="pol-order" type="number" value="' + (p.order||0) + '"></div>' +
+            '</div>' +
+            '<div class="modal-actions">' +
+              '<button class="btn" data-action="save-policy" data-value="' + (editing ? editing.id : '') + '">Save</button>' +
+              '<button class="btn secondary" data-action="close-policy-form">Cancel</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  function render(){
+    var pageBody;
+    if(UI.page === 'apply') pageBody = renderApplyPage();
+    else if(UI.page === 'schedules') pageBody = renderSchedulesPage();
+    else if(UI.page === 'leaderboard') pageBody = renderLeaderboardPage();
+    else if(UI.page === 'policies') pageBody = renderPoliciesPage();
+    else pageBody = renderHomePage();
+    var html = '' +
+      renderTopBar() +
+      renderNav() +
+      renderBanner() +
+      pageBody +
+      (UI.error && UI.page !== 'apply' ? '<div class="error-note">' + escapeHtml(UI.error) + '</div>' : '') +
       (UI.authError ? '<div class="error-note">' + escapeHtml(UI.authError) + '</div>' : '') +
       '<div class="footer-note">Plei Brand Ambassador Program · Phase 1 preview · Phase 2 adds games played, activity tracking, social &amp; affiliate data to every profile.</div>' +
       renderMemberModal() +
       renderMemberForm() +
       renderImportForm() +
       renderRegionForm() +
+      renderPolicyForm() +
       renderAuditLog();
     document.getElementById('app').innerHTML = html;
     bindHandlers();
@@ -970,10 +1234,44 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
         el.addEventListener('click', signOutUser);
       } else if(action === 'seed-defaults'){
         el.addEventListener('click', seedDefaults);
-      } else if(action === 'filter-role'){
-        el.addEventListener('click', function(){ FILTERS.role = el.getAttribute('data-value'); render(); });
-      } else if(action === 'filter-region' || action === 'pick-region'){
-        el.addEventListener('click', function(){ FILTERS.region = el.getAttribute('data-value'); render(); var sec = document.getElementById('roster-section'); if(sec) sec.scrollIntoView({behavior:'smooth', block:'start'}); });
+      } else if(action === 'pick-region'){
+        el.addEventListener('click', function(){
+          var key = el.getAttribute('data-value');
+          FILTERS.regions = (FILTERS.regions.length===1 && FILTERS.regions[0]===key) ? [] : [key];
+          render();
+          var sec = document.getElementById('roster-section'); if(sec) sec.scrollIntoView({behavior:'smooth', block:'start'});
+        });
+      } else if(action === 'toggle-filter-panel'){
+        el.addEventListener('click', function(){ UI.filterPanelOpen = !UI.filterPanelOpen; render(); });
+      } else if(action === 'filter-role-check'){
+        el.addEventListener('change', function(){
+          var v = el.getAttribute('data-value'); var i = FILTERS.roles.indexOf(v);
+          if(el.checked && i===-1) FILTERS.roles.push(v); else if(!el.checked && i!==-1) FILTERS.roles.splice(i,1);
+          render();
+        });
+      } else if(action === 'filter-region-check'){
+        el.addEventListener('change', function(){
+          var v = el.getAttribute('data-value'); var i = FILTERS.regions.indexOf(v);
+          if(el.checked && i===-1) FILTERS.regions.push(v); else if(!el.checked && i!==-1) FILTERS.regions.splice(i,1);
+          render();
+        });
+      } else if(action === 'filter-batype-check'){
+        el.addEventListener('change', function(){
+          var v = el.getAttribute('data-value'); var i = FILTERS.baTypes.indexOf(v);
+          if(el.checked && i===-1) FILTERS.baTypes.push(v); else if(!el.checked && i!==-1) FILTERS.baTypes.splice(i,1);
+          render();
+        });
+      } else if(action === 'filter-agreement'){
+        el.addEventListener('change', function(){ FILTERS.agreement = el.value; render(); });
+      } else if(action === 'add-batype-filter'){
+        el.addEventListener('click', function(){
+          var input = document.getElementById('f-filter-newtype');
+          var tag = input ? input.value.trim() : '';
+          if(!tag) return;
+          addBaType(tag);
+          if(FILTERS.baTypes.indexOf(tag) === -1) FILTERS.baTypes.push(tag);
+          render();
+        });
       } else if(action === 'search'){
         el.addEventListener('input', function(){ FILTERS.q = el.value; render(); var input = document.querySelector('.search-input'); if(input){ input.focus(); input.setSelectionRange(input.value.length, input.value.length);} });
       } else if(action === 'open-member'){
@@ -981,9 +1279,15 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
       } else if(action === 'close-modal'){
         el.addEventListener('click', function(){ UI.selectedId = null; render(); });
       } else if(action === 'add-member'){
-        el.addEventListener('click', function(){ UI.adding = true; UI.editingId = null; UI.selectedId = null; render(); });
+        el.addEventListener('click', function(){ UI.adding = true; UI.editingId = null; UI.selectedId = null; UI.formBaTypes = []; UI.pendingNewTypes = []; render(); });
       } else if(action === 'edit-member'){
-        el.addEventListener('click', function(){ UI.editingId = el.getAttribute('data-value'); UI.adding = false; UI.selectedId = null; render(); });
+        el.addEventListener('click', function(){
+          var id = el.getAttribute('data-value');
+          var m = STATE.members.filter(function(x){ return x.id === id; })[0];
+          UI.editingId = id; UI.adding = false; UI.selectedId = null;
+          UI.formBaTypes = (m && m.baTypes) ? m.baTypes.slice() : []; UI.pendingNewTypes = [];
+          render();
+        });
       } else if(action === 'delete-member'){
         el.addEventListener('click', function(){
           var id = el.getAttribute('data-value');
@@ -993,7 +1297,22 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
           deleteMember(id);
         });
       } else if(action === 'close-form'){
-        el.addEventListener('click', function(){ UI.adding = false; UI.editingId = null; render(); });
+        el.addEventListener('click', function(){ UI.adding = false; UI.editingId = null; UI.formBaTypes = []; render(); });
+      } else if(action === 'toggle-form-batype'){
+        el.addEventListener('change', function(){
+          var v = el.getAttribute('data-value'); var i = UI.formBaTypes.indexOf(v);
+          if(el.checked && i===-1) UI.formBaTypes.push(v); else if(!el.checked && i!==-1) UI.formBaTypes.splice(i,1);
+          render();
+        });
+      } else if(action === 'add-batype-form'){
+        el.addEventListener('click', function(){
+          var input = document.getElementById('f-newbatype');
+          var tag = input ? input.value.trim() : '';
+          if(!tag) return;
+          addBaType(tag);
+          if(UI.formBaTypes.indexOf(tag) === -1) UI.formBaTypes.push(tag);
+          render();
+        });
       } else if(action === 'save-member'){
         el.addEventListener('click', function(){
           var id = el.getAttribute('data-value');
@@ -1003,7 +1322,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
             role: document.getElementById('f-role').value,
             city: document.getElementById('f-city').value.trim(),
             reportsTo: document.getElementById('f-reports-to').value.trim(),
-            baTypes: document.getElementById('f-batypes').value.split(',').map(function(s){ return s.trim(); }).filter(Boolean),
+            baTypes: UI.formBaTypes.slice(),
             startDate: document.getElementById('f-start').value.trim(),
             profession: document.getElementById('f-profession').value.trim(),
             eventsWorked: parseInt(document.getElementById('f-events').value, 10) || 0,
@@ -1017,7 +1336,8 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
             workAuth: document.getElementById('f-workauth').value.trim(),
             mailingAddress: document.getElementById('f-address').value.trim(),
             bibBallInventory: document.getElementById('f-inventory').value.trim(),
-            agreementSigned: document.getElementById('f-agreement').value === 'yes'
+            agreementSigned: document.getElementById('f-agreement').value === 'yes',
+            agreementLink: document.getElementById('f-agreement-link').value.trim()
           };
           var prevPublic = id ? STATE.members.filter(function(x){ return x.id === id; })[0] : null;
           var prevPrivate = id ? (STATE.membersPrivate[id] || {}) : {};
@@ -1027,11 +1347,9 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
             Object.keys(privateData).forEach(function(k){ if(JSON.stringify(prevPrivate[k]) !== JSON.stringify(privateData[k])) changed.push(k); });
           }
           logAudit(id ? 'update' : 'create', id, data.name, id ? ('changed: ' + (changed.join(', ') || '—')) : 'new member added');
-          UI.adding = false; UI.editingId = null; render();
+          UI.adding = false; UI.editingId = null; UI.formBaTypes = []; render();
           saveMember(id || null, data, privateData);
         });
-      } else if(action === 'filter-type'){
-        el.addEventListener('click', function(){ FILTERS.baType = el.getAttribute('data-value'); render(); });
       } else if(action === 'filter-min-events'){
         el.addEventListener('change', function(){ FILTERS.minEvents = parseInt(el.value, 10) || 0; render(); });
       } else if(action === 'toggle-inactive'){
@@ -1064,7 +1382,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
       } else if(action === 'export-csv'){
         el.addEventListener('click', exportCSV);
       } else if(action === 'clear-filters'){
-        el.addEventListener('click', function(){ FILTERS.role='all'; FILTERS.region='all'; FILTERS.baType='all'; FILTERS.minEvents=0; FILTERS.q=''; render(); });
+        el.addEventListener('click', function(){ FILTERS.roles=[]; FILTERS.regions=[]; FILTERS.baTypes=[]; FILTERS.agreement='any'; FILTERS.minEvents=0; FILTERS.q=''; render(); });
       } else if(action === 'open-audit'){
         el.addEventListener('click', function(){ UI.auditOpen = true; render(); });
       } else if(action === 'close-audit'){
@@ -1091,6 +1409,49 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
             assignments[member][day] = inp.value.trim();
           });
           saveSchedule(assignments);
+        });
+      } else if(action === 'toggle-apply-batype'){
+        el.addEventListener('change', function(){
+          var v = el.getAttribute('data-value'); var i = UI.formBaTypes.indexOf(v);
+          if(el.checked && i===-1) UI.formBaTypes.push(v); else if(!el.checked && i!==-1) UI.formBaTypes.splice(i,1);
+          render();
+        });
+      } else if(action === 'submit-application'){
+        el.addEventListener('click', function(){
+          var name = document.getElementById('ap-name').value.trim();
+          var email = document.getElementById('ap-email').value.trim();
+          if(!name || !email){ UI.error = 'Name and email are required.'; render(); return; }
+          var data = {
+            name: name, email: email,
+            phone: document.getElementById('ap-phone').value.trim(),
+            city: document.getElementById('ap-city').value.trim(),
+            region: document.getElementById('ap-region').value,
+            instagram: document.getElementById('ap-instagram').value.trim(),
+            baTypes: UI.formBaTypes.slice(),
+            about: document.getElementById('ap-about').value.trim()
+          };
+          submitApplication(data);
+        });
+      } else if(action === 'apply-again'){
+        el.addEventListener('click', function(){ UI.applySubmitted = false; UI.formBaTypes = []; render(); });
+      } else if(action === 'add-policy'){
+        el.addEventListener('click', function(){ UI.addingPolicy = true; UI.editingPolicyId = null; render(); });
+      } else if(action === 'edit-policy'){
+        el.addEventListener('click', function(){ UI.editingPolicyId = el.getAttribute('data-value'); UI.addingPolicy = false; render(); });
+      } else if(action === 'delete-policy'){
+        el.addEventListener('click', function(){ deletePolicy(el.getAttribute('data-value')); });
+      } else if(action === 'close-policy-form'){
+        el.addEventListener('click', function(){ UI.addingPolicy = false; UI.editingPolicyId = null; render(); });
+      } else if(action === 'save-policy'){
+        el.addEventListener('click', function(){
+          var id = el.getAttribute('data-value');
+          var data = {
+            title: document.getElementById('pol-title').value.trim() || 'Untitled',
+            body: document.getElementById('pol-body').value.trim(),
+            order: parseInt(document.getElementById('pol-order').value, 10) || 0
+          };
+          UI.addingPolicy = false; UI.editingPolicyId = null; render();
+          savePolicy(id || null, data);
         });
       }
     });
