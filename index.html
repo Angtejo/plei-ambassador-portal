@@ -30,6 +30,7 @@
   --badge-cap-bg:#FBF1D8; --badge-cap-fg:#8A6A1B;
   --badge-sup-bg:#F1EAFB; --badge-sup-fg:#6D3FC2;
   --badge-pm-bg:#E7F0FC;  --badge-pm-fg:#2058B0;
+  --badge-host-bg:#F3F4F6; --badge-host-fg:#4B5563;
   --west:#5B8FC7; --central:#DB9A55; --southeast:#A47FCB; --northeast:#B99B3E;
   --radius-lg:20px; --radius-md:14px; --radius-sm:10px;
   --shadow-sm:0 1px 2px rgba(16,24,32,0.05);
@@ -123,6 +124,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
 .badge-captain{background:var(--badge-cap-bg);color:var(--badge-cap-fg);}
 .badge-supervisor{background:var(--badge-sup-bg);color:var(--badge-sup-fg);}
 .badge-pm{background:var(--badge-pm-bg);color:var(--badge-pm-fg);}
+.badge-host{background:var(--badge-host-bg);color:var(--badge-host-fg);}
 .badge-outline{border:1px solid var(--border);color:var(--text-muted);background:transparent;}
 .badge-credit{background:#e4f5ea;color:#1f7a4d;}
 
@@ -257,8 +259,9 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
   var auth = firebase.auth();
   var db = firebase.firestore();
 
-  var ROLE_LABELS = {ba:'Brand Ambassador', captain:'Captain', supervisor:'Regional Supervisor', pm:'Program Manager'};
-  var ROLE_BADGE_CLASS = {ba:'badge-ba', captain:'badge-captain', supervisor:'badge-supervisor', pm:'badge-pm'};
+  var ROLE_LABELS = {host:'Host', ba:'Brand Ambassador', captain:'Captain', supervisor:'Regional Supervisor', pm:'Manager/Admin'};
+  var ROLE_BADGE_CLASS = {host:'badge-host', ba:'badge-ba', captain:'badge-captain', supervisor:'badge-supervisor', pm:'badge-pm'};
+  var ROLE_RANK = {host:0, ba:1, captain:2, supervisor:3, pm:4};
   var REGION_ORDER = ['west','central','southeast','northeast'];
   var REGION_COLOR_VAR = {west:'--west', central:'--central', southeast:'--southeast', northeast:'--northeast'};
   var REGION_LABELS = {west:'West', central:'Central', southeast:'Southeast', northeast:'Northeast'};
@@ -364,12 +367,14 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
   var LOADED = {regions:false, members:false, schedule:false, baTypes:false, policies:false};
   var CURRENT_USER = null;
   var IS_PLEI_USER = false;
+  var MY_ACCESS = null;
   var SCHEDULE_UNSUB = null;
   var PRIVATE_UNSUB = null;
   var AUDIT_UNSUB = null;
   var APPLICATIONS_UNSUB = null;
   var CREDIT_HISTORY_UNSUB = null;
   var USAGE_HISTORY_UNSUB = null;
+  var SCOPED_PRIVATE_UNSUB = null;
   var BOOTSTRAPPED_TYPES = false;
 
   var FILTERS = {roles:[], regions:[], baTypes:[], agreement:'any', credits:'any', minEvents:0, showInactive:false, q:''};
@@ -392,10 +397,33 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     return !!(user && user.email && /@plei\.com$/i.test(user.email) && user.emailVerified);
   }
 
+  function canSeePrivate(memberId){
+    if(IS_PLEI_USER) return true;
+    if(!MY_ACCESS) return false;
+    if(MY_ACCESS.role === 'pm') return true;
+    if((MY_ACCESS.role === 'supervisor' || MY_ACCESS.role === 'captain') && MY_ACCESS.region && regionForMember(memberId) === MY_ACCESS.region) return true;
+    if(MY_ACCESS.memberId === memberId) return true;
+    return false;
+  }
+
+  function bootstrapAccess(user){
+    if(!user || !user.email){ MY_ACCESS = null; return Promise.resolve(null); }
+    var key = normalizeEmailKey(user.email);
+    return db.collection('email_index').doc(key).get().then(function(idxDoc){
+      if(!idxDoc.exists){ MY_ACCESS = null; return null; }
+      var memberId = idxDoc.data().memberId;
+      return db.collection('members').doc(memberId).get().then(function(mDoc){
+        if(!mDoc.exists){ MY_ACCESS = null; return null; }
+        var md = mDoc.data();
+        MY_ACCESS = {memberId: memberId, role: md.role || 'ba', region: md.region || '', name: md.name || ''};
+        return MY_ACCESS;
+      });
+    }).catch(function(){ MY_ACCESS = null; return null; });
+  }
+
   function signIn(){
     UI.authError = '';
     var provider = new firebase.auth.GoogleAuthProvider();
-    provider.setCustomParameters({hd: 'plei.com'});
     auth.signInWithPopup(provider).catch(function(err){
       if(err && err.code === 'auth/popup-closed-by-user') return;
       UI.authError = 'Sign-in failed — please try again.';
@@ -407,12 +435,14 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
   auth.onAuthStateChanged(function(user){
     CURRENT_USER = user;
     IS_PLEI_USER = isPleiEmail(user);
+    MY_ACCESS = null;
     if(SCHEDULE_UNSUB){ SCHEDULE_UNSUB(); SCHEDULE_UNSUB = null; }
     if(PRIVATE_UNSUB){ PRIVATE_UNSUB(); PRIVATE_UNSUB = null; }
     if(AUDIT_UNSUB){ AUDIT_UNSUB(); AUDIT_UNSUB = null; }
     if(APPLICATIONS_UNSUB){ APPLICATIONS_UNSUB(); APPLICATIONS_UNSUB = null; }
     if(CREDIT_HISTORY_UNSUB){ CREDIT_HISTORY_UNSUB(); CREDIT_HISTORY_UNSUB = null; }
     if(USAGE_HISTORY_UNSUB){ USAGE_HISTORY_UNSUB(); USAGE_HISTORY_UNSUB = null; }
+    if(SCOPED_PRIVATE_UNSUB){ SCOPED_PRIVATE_UNSUB(); SCOPED_PRIVATE_UNSUB = null; }
     LOADED.schedule = false;
     STATE.membersPrivate = {};
     STATE.auditLog = [];
@@ -472,6 +502,29 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
       }, function(){ render(); });
     } else {
       STATE.schedule = {weekLabel:'This week', days: DAYS, assignments: {}};
+    }
+    if(!IS_PLEI_USER && user){
+      bootstrapAccess(user).then(function(access){
+        if(CURRENT_USER !== user) return;
+        if(!access){ render(); return; }
+        if(access.role === 'pm'){
+          SCOPED_PRIVATE_UNSUB = db.collection('members_private').onSnapshot(function(snap){
+            var next = {}; snap.forEach(function(doc){ next[doc.id] = doc.data(); });
+            STATE.membersPrivate = next; render();
+          }, function(){ render(); });
+        } else if(access.role === 'supervisor' || access.role === 'captain'){
+          SCOPED_PRIVATE_UNSUB = db.collection('members_private').where('region', '==', access.region).onSnapshot(function(snap){
+            var next = {}; snap.forEach(function(doc){ next[doc.id] = doc.data(); });
+            STATE.membersPrivate = next; render();
+          }, function(){ render(); });
+        } else {
+          SCOPED_PRIVATE_UNSUB = db.collection('members_private').doc(access.memberId).onSnapshot(function(doc){
+            var next = {}; if(doc.exists) next[doc.id] = doc.data();
+            STATE.membersPrivate = next; render();
+          }, function(){ render(); });
+        }
+        render();
+      });
     }
     render();
   });
@@ -553,7 +606,8 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     var p = String(pos||'').toLowerCase();
     if(p.indexOf('supervisor') !== -1) return 'supervisor';
     if(p.indexOf('captain') !== -1) return 'captain';
-    if(p.indexOf('program manager') !== -1) return 'pm';
+    if(p.indexOf('program manager') !== -1 || p.indexOf('manager') !== -1 || p.indexOf('admin') !== -1) return 'pm';
+    if(p.indexOf('host') !== -1) return 'host';
     return 'ba';
   }
   function regionKeyFromName(name){
@@ -616,6 +670,19 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     return {people: people, error: ''};
   }
 
+  function normalizeEmailKey(email){
+    return String(email||'').trim().toLowerCase();
+  }
+  function regionForMember(memberId){
+    var m = STATE.members.filter(function(x){ return x.id === memberId; })[0];
+    return m ? (m.region || '') : '';
+  }
+  function writeEmailIndex(batch, memberId, email){
+    var key = normalizeEmailKey(email);
+    if(!key) return;
+    batch.set(db.collection('email_index').doc(key), {memberId: memberId}, {merge:true});
+  }
+
   function importRoster(people){
     UI.importing = true; UI.importError = ''; render();
     var batch = db.batch();
@@ -629,8 +696,9 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
       batch.set(db.collection('members_private').doc(id), {
         phone: p.phone, email: p.email, mailingAddress: p.mailingAddress,
         workAuth: p.workAuth, instagram: p.instagram,
-        bibBallInventory: p.bibBallInventory, agreementSigned: p.agreementSigned
+        bibBallInventory: p.bibBallInventory, agreementSigned: p.agreementSigned, region: p.region
       }, {merge: true});
+      writeEmailIndex(batch, id, p.email);
     });
     batch.commit().then(function(){
       UI.importing = false; UI.importOpen = false; UI.importRows = null; render();
@@ -654,11 +722,24 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     if(id){
       var batch = db.batch();
       batch.set(db.collection('members').doc(id), data, {merge:true});
-      if(privateData){ batch.set(db.collection('members_private').doc(id), privateData, {merge:true}); }
+      if(privateData){
+        var region = (data && data.region) || regionForMember(id);
+        var pd = Object.assign({}, privateData, {region: region});
+        batch.set(db.collection('members_private').doc(id), pd, {merge:true});
+        if(privateData.email){ writeEmailIndex(batch, id, privateData.email); }
+      }
       withSaving(batch.commit());
     } else {
       withSaving(db.collection('members').add(data).then(function(ref){
-        if(privateData){ return db.collection('members_private').doc(ref.id).set(privateData, {merge:true}); }
+        if(!privateData) return null;
+        var pd = Object.assign({}, privateData, {region: (data && data.region) || ''});
+        var p1 = db.collection('members_private').doc(ref.id).set(pd, {merge:true});
+        if(privateData.email){
+          var batch2 = db.batch();
+          writeEmailIndex(batch2, ref.id, privateData.email);
+          return Promise.all([p1, batch2.commit()]);
+        }
+        return p1;
       }));
     }
   }
@@ -789,7 +870,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     matched.forEach(function(row){
       batch.set(db.collection('members_private').doc(row.memberId), {
         gameCreditAmount: row.amount, gameCreditCategory: row.category, gameCreditReason: row.reason,
-        gameCreditExpiration: row.expiration, gameCreditMonth: monthLabel
+        gameCreditExpiration: row.expiration, gameCreditMonth: monthLabel, region: regionForMember(row.memberId)
       }, {merge:true});
     });
     batch.commit().then(function(){
@@ -816,7 +897,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
       batch.set(db.collection('credit_history').doc(m.id + '_' + monthKey), {
         memberId: m.id, memberName: m.name, month: monthKey, monthLabel: monthLabel,
         amount: amt, category: priv.gameCreditCategory||'', reason: priv.gameCreditReason||'',
-        expiration: expiration, recordedAt: firebase.firestore.FieldValue.serverTimestamp()
+        expiration: expiration, region: m.region || '', recordedAt: firebase.firestore.FieldValue.serverTimestamp()
       }, {merge:true});
       historyCount++;
     });
@@ -888,11 +969,11 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
         requiredCaptainGames: row.requiredCaptainGames, requiredCaptainSpend: row.requiredCaptainSpend,
         notRequiredGames: row.notRequiredGames, notRequiredSpend: row.notRequiredSpend,
         lastGamePlayed: row.lastGamePlayed, gamesPlayed: row.gamesPlayed,
-        recordedAt: firebase.firestore.FieldValue.serverTimestamp()
+        region: regionForMember(row.memberId), recordedAt: firebase.firestore.FieldValue.serverTimestamp()
       }, {merge:true});
       batch.set(db.collection('members_private').doc(row.memberId), {
         usageCreditsLeft: row.creditsLeft, usageGamesPlayed: row.gamesPlayed,
-        usageLastGamePlayed: row.lastGamePlayed, usageMonth: monthLabel
+        usageLastGamePlayed: row.lastGamePlayed, usageMonth: monthLabel, region: regionForMember(row.memberId)
       }, {merge:true});
     });
     batch.commit().then(function(){
@@ -1029,6 +1110,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     var statusHtml;
     if(UI.saving){ statusHtml = '<span class="status-pill editing">Saving…</span>'; }
     else if(IS_PLEI_USER){ statusHtml = '<span class="status-pill editing">Plei team — editing enabled</span>'; }
+    else if(MY_ACCESS){ statusHtml = '<span class="status-pill editing">' + escapeHtml(ROLE_LABELS[MY_ACCESS.role]||'') + (MY_ACCESS.region ? ' — ' + escapeHtml(regionName(MY_ACCESS.region)) : '') + '</span>'; }
     else { statusHtml = '<span class="status-pill readonly">Public view</span>'; }
     var authHtml;
     if(CURRENT_USER){
@@ -1036,7 +1118,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
         (IS_PLEI_USER ? '<button class="auth-btn" data-action="open-audit">Activity log</button>' : '') +
         '<button class="auth-btn" data-action="sign-out">Sign out</button>';
     } else {
-      authHtml = '<button class="auth-btn primary" data-action="sign-in">Sign in with Google (Plei team)</button>';
+      authHtml = '<button class="auth-btn primary" data-action="sign-in">Sign in with Google</button>';
     }
     return '' +
       '<div class="topbar">' +
@@ -1066,11 +1148,16 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
 
   function renderBanner(){
     if(IS_PLEI_USER) return '';
-    if(CURRENT_USER){
-      return '<div class="readonly-banner warn"><span>Signed in as ' + escapeHtml(CURRENT_USER.email) + ', but that isn\'t a Plei team account, so you\'re seeing the public view.</span>' +
+    if(MY_ACCESS){
+      var scopeNote = (MY_ACCESS.role === 'supervisor' || MY_ACCESS.role === 'captain') ? ' plus your region\'s roster' : (MY_ACCESS.role === 'pm' ? ' — full roster access' : '');
+      return '<div class="readonly-banner"><span>Signed in as ' + escapeHtml(CURRENT_USER.email) + ' — ' + escapeHtml(ROLE_LABELS[MY_ACCESS.role]||'') + (MY_ACCESS.region ? ' · ' + escapeHtml(regionName(MY_ACCESS.region)) + ' region' : '') + '. You can see your own contact &amp; credit details' + scopeNote + '.</span>' +
         '<button class="auth-btn" data-action="sign-out">Sign out</button></div>';
     }
-    return '<div class="readonly-banner">You\'re viewing the public roster. Plei team members: sign in with your @plei.com Google account to edit and see scheduling.</div>';
+    if(CURRENT_USER){
+      return '<div class="readonly-banner warn"><span>Signed in as ' + escapeHtml(CURRENT_USER.email) + ', but we couldn\'t match that email to a roster record, so you\'re seeing the public view. Contact your Program Manager if that seems wrong.</span>' +
+        '<button class="auth-btn" data-action="sign-out">Sign out</button></div>';
+    }
+    return '<div class="readonly-banner">You\'re viewing the public roster. Plei ambassadors and team members: sign in with Google using the email on file to see your own contact info and credits (supervisors and captains also see their region\'s roster).</div>';
   }
 
   function renderGlance(){
@@ -1100,7 +1187,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
 
   function renderFilterPanel(){
     if(!UI.filterPanelOpen) return '';
-    var roleChecks = ['ba','captain','supervisor','pm'].map(function(r){
+    var roleChecks = ['host','ba','captain','supervisor','pm'].map(function(r){
       return '<label class="filter-check"><input type="checkbox" data-action="filter-role-check" data-value="' + r + '"' + (FILTERS.roles.indexOf(r)!==-1?' checked':'') + '> ' + escapeHtml(ROLE_LABELS[r]) + '</label>';
     }).join('');
     var regionChecks = REGION_ORDER.map(function(r){
@@ -1233,7 +1320,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     var cards = members.map(function(m){
       var typeTags = (m.baTypes||[]).map(function(t){ return '<span class="tag">' + escapeHtml(t) + '</span>'; }).join('');
       var priv = STATE.membersPrivate[m.id] || {};
-      var creditBadge = (IS_PLEI_USER && priv.gameCreditAmount != null && priv.gameCreditAmount > 0) ?
+      var creditBadge = (canSeePrivate(m.id) && priv.gameCreditAmount != null && priv.gameCreditAmount > 0) ?
         '<span class="badge badge-credit">$' + priv.gameCreditAmount + ' credit</span>' : '';
       return '<div class="member-card" data-action="open-member" data-value="' + m.id + '">' +
         '<div class="member-top">' +
@@ -1323,7 +1410,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     if(m.startDate){ tags += '<span class="tag">On team since ' + escapeHtml(m.startDate) + '</span>'; }
     if(m.reportsTo){ tags += '<span class="tag">Reports to ' + escapeHtml(m.reportsTo) + '</span>'; }
     var contactBody = '';
-    if(IS_PLEI_USER){
+    if(canSeePrivate(m.id)){
       var priv = STATE.membersPrivate[m.id] || {};
       var agreementVal = priv.agreementSigned === true ? 'Yes' : (priv.agreementSigned === false ? 'No' : '—');
       var agreementHtml = priv.agreementLink ? '<a href="' + escapeHtml(priv.agreementLink) + '" target="_blank" rel="noopener">' + escapeHtml(agreementVal) + ' — view agreement ↗</a>' : escapeHtml(agreementVal);
@@ -1396,7 +1483,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     var m = editing || {name:'',region:'central',role:'ba',city:'',startDate:'',experience:'',profession:'',eventsWorked:0,reportsTo:'',baTypes:[],status:'active'};
     var priv = (editing && STATE.membersPrivate[editing.id]) || {};
     var regionOpts = REGION_ORDER.map(function(r){ return '<option value="' + r + '"' + (m.region===r?' selected':'') + '>' + escapeHtml(regionName(r)) + '</option>'; }).join('');
-    var roleOpts = ['ba','captain','supervisor','pm'].map(function(r){ return '<option value="' + r + '"' + (m.role===r?' selected':'') + '>' + ROLE_LABELS[r] + '</option>'; }).join('');
+    var roleOpts = ['host','ba','captain','supervisor','pm'].map(function(r){ return '<option value="' + r + '"' + (m.role===r?' selected':'') + '>' + ROLE_LABELS[r] + '</option>'; }).join('');
     var batypeChecks = allKnownBaTypes().map(function(t){
       return '<label class="batype-check"><input type="checkbox" data-action="toggle-form-batype" data-value="' + escapeHtml(t) + '"' + (UI.formBaTypes.indexOf(t)!==-1?' checked':'') + '> ' + escapeHtml(t) + '</label>';
     }).join('');
