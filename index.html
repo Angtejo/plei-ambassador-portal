@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 <style>
 :root{
   --bg:#F5F6F8;
@@ -267,7 +268,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
   var REGION_LABELS = {west:'West', central:'Central', southeast:'Southeast', northeast:'Northeast'};
   var DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   var BASE_BA_TYPES = ['Content Creator','Event Organizer','Photographer','Affiliate Marketer','Adidas Brand Ambassadors','Eleven Brand Ambassadors'];
-  var PAGES = ['home','apply','schedules','leaderboard','policies','credits'];
+  var PAGES = ['home','apply','refer','schedules','leaderboard','policies','credits'];
   var CITY_COORDS = {
     'bay area':[-122.27,37.87],'san francisco':[-122.42,37.77],'los angeles':[-118.24,34.05],'san diego':[-117.16,32.72],
     'phoenix':[-112.07,33.45],'sacramento':[-121.49,38.58],'seattle':[-122.33,47.61],'portland':[-122.68,45.52],
@@ -333,7 +334,13 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
   }
   function pageFromHash(){
     var h = (location.hash||'').replace('#','').toLowerCase();
+    if(h.indexOf('refer') === 0) return 'refer';
     return PAGES.indexOf(h) !== -1 ? h : 'home';
+  }
+  function referCodeFromHash(){
+    var h = (location.hash||'').replace('#','');
+    var m = /^refer-(.+)$/i.exec(h);
+    return m ? decodeURIComponent(m[1]).trim() : '';
   }
   function regionName(key){
     var r = STATE.regions[key];
@@ -362,6 +369,8 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     policies: [],
     creditHistory: [],
     usageHistory: [],
+    referrals: [],
+    referralCredits: [],
     schedule: {weekLabel:'This week', days: DAYS, assignments: {}}
   };
   var LOADED = {regions:false, members:false, schedule:false, baTypes:false, policies:false};
@@ -375,7 +384,11 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
   var CREDIT_HISTORY_UNSUB = null;
   var USAGE_HISTORY_UNSUB = null;
   var SCOPED_PRIVATE_UNSUB = null;
+  var REFERRALS_UNSUB = null;
+  var REFERRAL_CREDITS_UNSUB = null;
   var BOOTSTRAPPED_TYPES = false;
+  var BOOTSTRAPPED_REFCODES = false;
+  var QR_CACHE = {};
 
   var FILTERS = {roles:[], regions:[], baTypes:[], agreement:'any', credits:'any', minEvents:0, showInactive:false, q:''};
   var UI = {
@@ -384,10 +397,13 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     applySubmitted:false, addingPolicy:false, editingPolicyId:null,
     saving:false, seeding:false, importing:false, importOpen:false, importRows:null, importError:'', error:'', authError:'',
     creditImportOpen:false, creditImportRows:null, creditImportUnmatched:null, creditImportMonth:'', creditImportExpiration:'', creditImportError:'', creditImporting:false,
-    usageImportOpen:false, usageImportRows:null, usageImportUnmatched:null, usageImportMonth:'', usageImportError:'', usageImporting:false
+    usageImportOpen:false, usageImportRows:null, usageImportUnmatched:null, usageImportMonth:'', usageImportError:'', usageImporting:false,
+    referCode: referCodeFromHash(), referSubmitted:false,
+    referralImportOpen:false, referralImportRows:null, referralImportError:'', referralImporting:false
   };
   window.addEventListener('hashchange', function(){
     UI.page = pageFromHash(); UI.selectedId = null; UI.error = ''; UI.formBaTypes = []; UI.filterPanelOpen = false;
+    if(UI.page === 'refer'){ UI.referCode = referCodeFromHash(); UI.referSubmitted = false; }
     render();
   });
 
@@ -443,12 +459,16 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     if(CREDIT_HISTORY_UNSUB){ CREDIT_HISTORY_UNSUB(); CREDIT_HISTORY_UNSUB = null; }
     if(USAGE_HISTORY_UNSUB){ USAGE_HISTORY_UNSUB(); USAGE_HISTORY_UNSUB = null; }
     if(SCOPED_PRIVATE_UNSUB){ SCOPED_PRIVATE_UNSUB(); SCOPED_PRIVATE_UNSUB = null; }
+    if(REFERRALS_UNSUB){ REFERRALS_UNSUB(); REFERRALS_UNSUB = null; }
+    if(REFERRAL_CREDITS_UNSUB){ REFERRAL_CREDITS_UNSUB(); REFERRAL_CREDITS_UNSUB = null; }
     LOADED.schedule = false;
     STATE.membersPrivate = {};
     STATE.auditLog = [];
     STATE.applications = [];
     STATE.creditHistory = [];
     STATE.usageHistory = [];
+    STATE.referrals = [];
+    STATE.referralCredits = [];
     if(IS_PLEI_USER && !BOOTSTRAPPED_TYPES){
       BOOTSTRAPPED_TYPES = true;
       db.collection('config').doc('baTypes').get().then(function(doc){
@@ -498,6 +518,18 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
         var next = [];
         snap.forEach(function(doc){ next.push(doc.data()); });
         STATE.usageHistory = next;
+        render();
+      }, function(){ render(); });
+      REFERRALS_UNSUB = db.collection('referrals').orderBy('submittedAt','desc').onSnapshot(function(snap){
+        var next = [];
+        snap.forEach(function(doc){ next.push(Object.assign({id:doc.id}, doc.data())); });
+        STATE.referrals = next;
+        render();
+      }, function(){ render(); });
+      REFERRAL_CREDITS_UNSUB = db.collection('referral_credits').onSnapshot(function(snap){
+        var next = [];
+        snap.forEach(function(doc){ next.push(Object.assign({id:doc.id}, doc.data())); });
+        STATE.referralCredits = next;
         render();
       }, function(){ render(); });
     } else {
@@ -681,6 +713,84 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     var key = normalizeEmailKey(email);
     if(!key) return;
     batch.set(db.collection('email_index').doc(key), {memberId: memberId}, {merge:true});
+  }
+
+  function canManageWrites(){
+    return IS_PLEI_USER || (MY_ACCESS && MY_ACCESS.role === 'pm');
+  }
+
+  function generateReferralCode(seed, name){
+    var base = String(name || seed || 'ba').toLowerCase().replace(/[^a-z0-9]+/g,'').slice(0,6) || 'ba';
+    var hash = 0; var src = String(seed || name || '');
+    for(var i=0;i<src.length;i++){ hash = ((hash<<5) - hash + src.charCodeAt(i)) | 0; }
+    var suffix = Math.abs(hash).toString(36).slice(0,4);
+    return (base + suffix).toUpperCase();
+  }
+
+  function ensureReferralCodes(){
+    if(BOOTSTRAPPED_REFCODES) return;
+    if(!canManageWrites()) return;
+    if(!LOADED.members) return;
+    var missing = STATE.members.filter(function(m){ return !m.referralCode; });
+    if(!missing.length){ BOOTSTRAPPED_REFCODES = true; return; }
+    BOOTSTRAPPED_REFCODES = true;
+    var used = {}; STATE.members.forEach(function(m){ if(m.referralCode) used[m.referralCode] = true; });
+    var batch = db.batch();
+    missing.forEach(function(m){
+      var code = generateReferralCode(m.id, m.name);
+      var tries = 0;
+      while(used[code] && tries < 6){ code = generateReferralCode(m.id + '-' + tries, m.name); tries++; }
+      used[code] = true;
+      batch.set(db.collection('members').doc(m.id), {referralCode: code}, {merge:true});
+    });
+    batch.commit().catch(function(){ BOOTSTRAPPED_REFCODES = false; });
+  }
+
+  function referralLinkForCode(code){
+    return location.origin + location.pathname + '#refer-' + encodeURIComponent(code);
+  }
+
+  function ensureQR(code, text){
+    if(!code || !text) return;
+    if(QR_CACHE[code]) return;
+    if(typeof QRCode === 'undefined') { QR_CACHE[code] = null; return; }
+    QR_CACHE[code] = 'pending';
+    QRCode.toDataURL(text, {width:220, margin:1}, function(err, url){
+      QR_CACHE[code] = err ? null : url;
+      render();
+    });
+  }
+
+  function memberByReferralCode(code){
+    if(!code) return null;
+    var norm = String(code).trim().toUpperCase();
+    return STATE.members.filter(function(m){ return m.referralCode && m.referralCode.toUpperCase() === norm; })[0] || null;
+  }
+
+  function referralStatsForMember(memberId){
+    var mine = STATE.referrals.filter(function(r){ return r.referredByMemberId === memberId; });
+    var converted = mine.filter(function(r){ return r.status === 'converted'; });
+    var creditTotal = STATE.referralCredits.filter(function(c){ return c.memberId === memberId; }).reduce(function(s,c){ return s + (c.amount||0); }, 0);
+    return {total: mine.length, converted: converted.length, creditTotal: creditTotal};
+  }
+
+  function findReferralDuplicates(ref){
+    var notes = [];
+    var phone = normalizePhone10(ref.referredPhone);
+    var email = normalizeEmailKey(ref.referredEmail);
+    if(phone){
+      var rosterHit = STATE.members.filter(function(m){ return normalizePhone10((STATE.membersPrivate[m.id]||{}).phone) === phone; })[0];
+      if(rosterHit) notes.push('Already on roster: ' + rosterHit.name);
+      var appHit = STATE.applications.filter(function(a){ return normalizePhone10(a.phone) === phone; })[0];
+      if(appHit) notes.push('Already applied: ' + appHit.name);
+      var otherRefHit = STATE.referrals.filter(function(r){ return r.id !== ref.id && normalizePhone10(r.referredPhone) === phone; })[0];
+      if(otherRefHit) notes.push('Referred before by ' + (otherRefHit.referredByName || 'someone else'));
+    }
+    if(email){
+      var rosterHitE = STATE.members.filter(function(m){ return normalizeEmailKey((STATE.membersPrivate[m.id]||{}).email) === email; })[0];
+      if(rosterHitE && notes.indexOf('Already on roster: ' + rosterHitE.name) === -1) notes.push('Already on roster: ' + rosterHitE.name);
+    }
+    return notes;
   }
 
   function importRoster(people){
@@ -1011,6 +1121,131 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     });
   }
 
+  function submitReferral(data){
+    UI.saving = true; UI.error = ''; render();
+    var codeRaw = (data.referralCode || '').trim();
+    var referrer = memberByReferralCode(codeRaw);
+    var payload = {
+      referredName: data.referredName || '', referredPhone: data.referredPhone || '',
+      referredEmail: data.referredEmail || '', referredCity: data.referredCity || '',
+      notes: data.notes || '',
+      referralCode: referrer ? referrer.referralCode : codeRaw,
+      referredByMemberId: referrer ? referrer.id : '',
+      referredByName: referrer ? referrer.name : '',
+      region: referrer ? (referrer.region || '') : '',
+      status: 'new', source: 'portal',
+      submittedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    db.collection('referrals').add(payload).then(function(){
+      UI.saving = false; UI.referSubmitted = true; render();
+    }).catch(function(){
+      UI.saving = false; UI.error = 'Could not submit — please try again.'; render();
+    });
+  }
+
+  function updateReferralStatus(id, status){
+    var ref = STATE.referrals.filter(function(r){ return r.id === id; })[0];
+    withSaving(db.collection('referrals').doc(id).set({status: status}, {merge:true}));
+    logAudit('referral-status', id, ref ? ref.referredName : id, 'marked ' + status);
+  }
+
+  function approveReferralCredit(id, amount){
+    var ref = STATE.referrals.filter(function(r){ return r.id === id; })[0];
+    if(!ref || !ref.referredByMemberId) return;
+    var amt = parseFloat(amount) || 0;
+    if(amt <= 0) return;
+    var batch = db.batch();
+    batch.set(db.collection('referral_credits').doc(id), {
+      referralId: id, memberId: ref.referredByMemberId, memberName: ref.referredByName || '',
+      referredName: ref.referredName || '', amount: amt, region: ref.region || '',
+      status: 'pending-export', approvedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, {merge:true});
+    batch.set(db.collection('referrals').doc(id), {status: 'converted', creditApproved: true, creditAmount: amt}, {merge:true});
+    withSaving(batch.commit());
+    logAudit('referral-credit', id, ref.referredByName, 'approved $' + amt + ' referral credit for referring ' + (ref.referredName||''));
+  }
+
+  function exportReferralCreditsCSV(){
+    var pending = STATE.referralCredits.filter(function(c){ return c.status === 'pending-export'; });
+    if(!pending.length){ UI.error = 'No approved referral credits are waiting to be exported.'; render(); return; }
+    var lines = [['Member Name','Referred Name','Credit Amount','Region'].map(csvEscape).join(',')];
+    var batch = db.batch();
+    pending.forEach(function(c){
+      lines.push([c.memberName||'', c.referredName||'', c.amount||0, regionName(c.region)].map(csvEscape).join(','));
+      batch.set(db.collection('referral_credits').doc(c.referralId || c.id), {status: 'exported', exportedAt: firebase.firestore.FieldValue.serverTimestamp()}, {merge:true});
+    });
+    var blob = new Blob([lines.join('\n')], {type:'text/csv;charset=utf-8;'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = 'plei-referral-credits-' + (new Date().toISOString().slice(0,10)) + '.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+    batch.commit().then(function(){
+      logAudit('export-referral-credits', '', '', 'exported ' + pending.length + ' referral credits');
+    });
+  }
+
+  function parseReferralsCSV(text){
+    var rows = parseCSV(text);
+    if(!rows.length) return {rows:[], error:'That file looks empty.'};
+    var header = rows[0].map(function(h){ return String(h||'').trim().toLowerCase(); });
+    function col(name){ return header.indexOf(name); }
+    var idx = {
+      referrerPhone: col('referrer phone'), referrerCode: col('referrer code'),
+      name: col('referred name'), phone: col('referred phone'), email: col('referred email'),
+      city: col('city'), status: col('status'), date: col('date')
+    };
+    if(idx.name === -1){ return {rows:[], error:'Could not find a "Referred Name" column in that file.'}; }
+    var byPhone = {};
+    STATE.members.forEach(function(m){
+      var key = normalizePhone10((STATE.membersPrivate[m.id]||{}).phone);
+      if(key) byPhone[key] = m;
+    });
+    var out = [];
+    for(var r=1; r<rows.length; r++){
+      var row = rows[r];
+      var name = (row[idx.name] || '').trim();
+      if(!name) continue;
+      var refPhone = idx.referrerPhone !== -1 ? normalizePhone10(row[idx.referrerPhone]) : '';
+      var refMember = refPhone ? byPhone[refPhone] : null;
+      var refCode = idx.referrerCode !== -1 ? (row[idx.referrerCode]||'').trim() : '';
+      if(!refMember && refCode){ refMember = memberByReferralCode(refCode); }
+      out.push({
+        referredName: name,
+        referredPhone: (idx.phone !== -1 ? row[idx.phone] : '').trim(),
+        referredEmail: (idx.email !== -1 ? row[idx.email] : '').trim(),
+        referredCity: (idx.city !== -1 ? row[idx.city] : '').trim(),
+        status: (idx.status !== -1 ? row[idx.status] : '').trim().toLowerCase() || 'new',
+        referredByMemberId: refMember ? refMember.id : '',
+        referredByName: refMember ? refMember.name : '',
+        region: refMember ? (refMember.region||'') : '',
+        importedDate: (idx.date !== -1 ? row[idx.date] : '').trim()
+      });
+    }
+    return {rows: out, error: ''};
+  }
+
+  function importReferrals(rows){
+    UI.referralImporting = true; UI.referralImportError = ''; render();
+    var batch = db.batch();
+    rows.forEach(function(r){
+      var ref = db.collection('referrals').doc();
+      batch.set(ref, Object.assign({}, r, {
+        notes: r.importedDate ? ('Imported from Airtable, originally dated ' + r.importedDate) : 'Imported from Airtable',
+        source: 'airtable-import',
+        submittedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }));
+    });
+    batch.commit().then(function(){
+      logAudit('import-referrals', '', '', 'imported ' + rows.length + ' historical referrals from Airtable');
+      UI.referralImporting = false; UI.referralImportOpen = false; UI.referralImportRows = null; render();
+    }).catch(function(err){
+      UI.referralImporting = false;
+      UI.referralImportError = (err && err.code === 'permission-denied') ? 'You do not have permission to import — sign in with your @plei.com account.' : 'Import failed — please try again.';
+      render();
+    });
+  }
+
   function savePolicy(id, data){
     if(id){ withSaving(db.collection('policies').doc(id).set(data, {merge:true})); }
     else { withSaving(db.collection('policies').add(data)); }
@@ -1135,6 +1370,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     var links = [
       {key:'home', label:'Home'},
       {key:'apply', label:'Become an Ambassador'},
+      {key:'refer', label:'Refer & Earn'},
       {key:'schedules', label:'Schedules'},
       {key:'leaderboard', label:'Leaderboard'},
       {key:'policies', label:'Policies'}
@@ -1433,6 +1669,19 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
           kv.map(function(pair){ return '<div class="kv-row"><span class="k">' + pair[0] + '</span><span class="v">' + (pair[0]==='Agreement signed' || pair[0]==='Game credits' || pair[0]==='Game usage' ? pair[1] : escapeHtml(pair[1])) + '</span></div>'; }).join('');
       }
     }
+    var referralBody = '';
+    if(m.referralCode && canSeePrivate(m.id)){
+      var refLink = referralLinkForCode(m.referralCode);
+      ensureQR(m.referralCode, refLink);
+      var qrData = QR_CACHE[m.referralCode];
+      var qrHtml = (qrData && qrData !== 'pending') ? '<img src="' + qrData + '" alt="Referral QR code" style="width:140px;height:140px;border-radius:8px;">' : '<div class="internal-note">Generating QR code…</div>';
+      var rstats = referralStatsForMember(m.id);
+      referralBody = '<div class="section-label">Referral Link</div>' +
+        '<div class="kv-row"><span class="k">Code</span><span class="v">' + escapeHtml(m.referralCode) + '</span></div>' +
+        '<div class="kv-row"><span class="k">Link</span><span class="v" style="word-break:break-all;">' + escapeHtml(refLink) + '</span></div>' +
+        (IS_PLEI_USER ? '<div class="kv-row"><span class="k">Referral credits earned</span><span class="v">$' + rstats.creditTotal + '</span></div>' : '') +
+        '<div style="margin-top:8px;">' + qrHtml + '</div>';
+    }
     var weekBody;
     if(IS_PLEI_USER){
       var rows = DAYS.map(function(d){
@@ -1466,10 +1715,13 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
               '<div class="stat-tile"><div class="stat-num tabular">' + (m.eventsWorked||0) + '</div><div class="stat-label">Events worked</div></div>' +
               '<div class="stat-tile"><div class="stat-num">' + escapeHtml(regionName(m.region)||'—') + '</div><div class="stat-label">Region</div></div>' +
               '<div class="stat-tile"><div class="stat-num">' + escapeHtml(m.startDate || '—') + '</div><div class="stat-label">On team since</div></div>' +
+              '<div class="stat-tile"><div class="stat-num tabular">' + referralStatsForMember(m.id).total + '</div><div class="stat-label">Referrals sent</div></div>' +
+              '<div class="stat-tile"><div class="stat-num tabular">' + referralStatsForMember(m.id).converted + '</div><div class="stat-label">Referrals converted</div></div>' +
             '</div>' +
             '<div class="section-label">This Week</div>' +
             weekBody +
             contactBody +
+            referralBody +
             about +
             actions +
           '</div>' +
@@ -1559,7 +1811,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
 
   function renderAuditLog(){
     if(!UI.auditOpen) return '';
-    var actionLabel = {create:'added', update:'updated', delete:'removed', import:'ran a bulk import', 'import-credits':'imported game credits', 'export-credits':'generated a monthly credits feed', 'import-usage':'imported Hex usage data'};
+    var actionLabel = {create:'added', update:'updated', delete:'removed', import:'ran a bulk import', 'import-credits':'imported game credits', 'export-credits':'generated a monthly credits feed', 'import-usage':'imported Hex usage data', 'referral-status':'updated a referral', 'referral-credit':'approved a referral credit', 'export-referral-credits':'exported referral credits', 'import-referrals':'imported historical referrals'};
     var rows = (STATE.auditLog||[]).map(function(e){
       var when = (e.editedAt && e.editedAt.toDate) ? e.editedAt.toDate().toLocaleString() : 'just now';
       var label = actionLabel[e.action] || e.action;
@@ -1633,6 +1885,92 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
         '<div class="card card-pad">' + (rows || '<div class="empty-note">No applications yet.</div>') + '</div>';
     }
     return '<div class="page-header"><h1>Become an Ambassador</h1><p class="sub">Apply to join the Plei Brand Ambassador Program.</p></div>' + form + reviewList;
+  }
+
+  var REFERRAL_STATUS_LABEL = {new:'New', contacted:'Contacted', converted:'Converted', duplicate:'Duplicate', rejected:'Not a fit'};
+  function renderReferPage(){
+    var referrer = UI.referCode ? memberByReferralCode(UI.referCode) : null;
+    var banner = UI.referCode ?
+      (referrer ? '<div class="apply-success" style="margin-bottom:16px;">You\'re being referred by <strong>' + escapeHtml(referrer.name) + '</strong>!</div>' :
+        '<div class="internal-note" style="margin-bottom:16px;">Referral code \'' + escapeHtml(UI.referCode) + '\' not recognized yet — you can still submit below.</div>') : '';
+    var formHtml;
+    if(UI.referSubmitted){
+      formHtml = '<div class="apply-success">Thanks! A team member will follow up soon.</div>' +
+        '<button class="btn secondary" style="margin-top:16px;" data-action="refer-again">Refer another friend</button>';
+    } else {
+      var codeField = UI.referCode ? '' : '<div class="form-field full"><label>Referral code (optional, if a friend gave you one)</label><input id="rf-code" type="text"></div>';
+      formHtml = '<div class="card card-pad">' +
+        '<div class="form-grid">' +
+          '<div class="form-field full"><label>Your name</label><input id="rf-name" type="text"></div>' +
+          '<div class="form-field"><label>Phone</label><input id="rf-phone" type="text"></div>' +
+          '<div class="form-field"><label>Email</label><input id="rf-email" type="text"></div>' +
+          '<div class="form-field"><label>City</label><input id="rf-city" type="text"></div>' +
+          codeField +
+          '<div class="form-field full"><label>Anything else we should know?</label><textarea id="rf-notes"></textarea></div>' +
+        '</div>' +
+        (UI.error ? '<div class="error-note">' + escapeHtml(UI.error) + '</div>' : '') +
+        '<div class="modal-actions"><button class="btn" data-action="submit-referral"' + (UI.saving?' disabled':'') + '>' + (UI.saving?'Submitting…':'Submit referral') + '</button></div>' +
+      '</div>';
+    }
+    var staffHtml = '';
+    if(IS_PLEI_USER){
+      var pendingCredits = STATE.referralCredits.filter(function(c){ return c.status === 'pending-export'; }).length;
+      var rows = STATE.referrals.map(function(r){
+        var when = (r.submittedAt && r.submittedAt.toDate) ? r.submittedAt.toDate().toLocaleDateString() : '';
+        var dupNotes = findReferralDuplicates(r);
+        var statusBadge = '<span class="badge ' + (r.status==='converted'?'badge-pm':(r.status==='duplicate'||r.status==='rejected'?'badge-inactive':'badge-host')) + '">' + (REFERRAL_STATUS_LABEL[r.status]||r.status) + '</span>';
+        var actionBtns = ['new','contacted','converted','duplicate','rejected'].filter(function(s){ return s !== r.status; }).map(function(s){
+          return '<button class="btn secondary" data-action="referral-set-status" data-value="' + r.id + '" data-status="' + s + '">Mark ' + (REFERRAL_STATUS_LABEL[s]||s) + '</button>';
+        }).join('');
+        var creditRow = (r.status === 'converted' && !r.creditApproved && r.referredByMemberId) ?
+          '<div class="form-field" style="display:inline-flex;gap:6px;align-items:center;margin-top:6px;"><input id="ref-credit-amt-' + r.id + '" type="number" min="0" step="0.01" placeholder="Credit $" style="width:100px;"><button class="btn" data-action="approve-referral-credit" data-value="' + r.id + '">Approve credit</button></div>' :
+          (r.creditApproved ? '<div class="log-meta">Referral credit approved: $' + (r.creditAmount||0) + '</div>' : '');
+        return '<div class="application-row">' +
+          '<strong>' + escapeHtml(r.referredName||'') + '</strong> ' + statusBadge +
+          '<div class="log-meta">' + escapeHtml(r.referredPhone||'') + (r.referredEmail ? ' · ' + escapeHtml(r.referredEmail) : '') + (r.referredCity ? ' · ' + escapeHtml(r.referredCity) : '') + '</div>' +
+          '<div class="log-meta">Referred by ' + escapeHtml(r.referredByName || 'unknown (no code / not matched)') + (r.region ? ' · ' + escapeHtml(regionName(r.region)) : '') + ' · ' + escapeHtml(when) + '</div>' +
+          (r.notes ? '<div class="log-meta">' + escapeHtml(r.notes) + '</div>' : '') +
+          (dupNotes.length ? '<div class="error-note" style="margin-top:6px;">⚠ Possible duplicate — ' + escapeHtml(dupNotes.join('; ')) + '</div>' : '') +
+          '<div class="modal-actions" style="margin-top:8px;">' + actionBtns + '</div>' +
+          creditRow +
+        '</div>';
+      }).join('');
+      staffHtml = '<div class="section-head" style="margin-top:28px;"><h2 style="font-size:17px;margin:0;">Referral Queue (' + STATE.referrals.length + ')</h2>' +
+        '<div style="display:flex;gap:8px;">' +
+        '<button class="btn secondary" data-action="open-referral-import">Import from Airtable (CSV)</button>' +
+        '<button class="btn" data-action="export-referral-credits">Export referral credits CSV' + (pendingCredits ? ' (' + pendingCredits + ')' : '') + '</button>' +
+        '</div></div>' +
+        '<div class="card card-pad">' + (rows || '<div class="empty-note">No referrals yet.</div>') + '</div>';
+    }
+    return '<div class="page-header"><h1>Refer &amp; Earn</h1><p class="sub">Know someone who\'d be a great Plei Brand Ambassador? Send them your link and earn a referral credit when they join.</p></div>' + banner + formHtml + staffHtml;
+  }
+
+  function renderReferralImportForm(){
+    if(!UI.referralImportOpen) return '';
+    var body;
+    if(UI.referralImportRows){
+      var matchedN = UI.referralImportRows.filter(function(r){ return r.referredByMemberId; }).length;
+      var summary = UI.referralImportRows.length + ' referrals found (' + matchedN + ' matched to a current ambassador by phone/code). Unmatched rows still import, just without a referrer credited.';
+      body = '<div class="import-summary">' + escapeHtml(summary) + '</div>' +
+        '<div class="modal-actions">' +
+          '<button class="btn" data-action="confirm-referral-import"' + (UI.referralImporting?' disabled':'') + '>' + (UI.referralImporting ? 'Importing…' : 'Import ' + UI.referralImportRows.length + ' referrals') + '</button>' +
+          '<button class="btn secondary" data-action="close-referral-import">Cancel</button>' +
+        '</div>';
+    } else {
+      body = '<div class="import-dropzone">CSV with columns: Referred Name, Referred Phone, Referred Email, City, Status, Referrer Phone (or Referrer Code), Date.<br><input type="file" accept=".csv,text/csv" data-action="referral-import-file"></div>' +
+        (UI.referralImportError ? '<div class="error-note">' + escapeHtml(UI.referralImportError) + '</div>' : '') +
+        '<div class="modal-actions"><button class="btn secondary" data-action="close-referral-import">Cancel</button></div>';
+    }
+    return '' +
+      '<div class="overlay" data-action="close-referral-import">' +
+        '<div class="modal" onclick="event.stopPropagation()">' +
+          '<div class="modal-body">' +
+            '<h2 style="margin-top:0;">Import historical referrals</h2>' +
+            '<div class="sub" style="margin-bottom:14px;">Column names are a best guess at the Airtable export — if the file doesn\'t match, ask Angel to confirm the real header names and we\'ll adjust.</div>' +
+            body +
+          '</div>' +
+        '</div>' +
+      '</div>';
   }
 
   function renderPoliciesPage(){
@@ -1805,8 +2143,10 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
   }
 
   function render(){
+    ensureReferralCodes();
     var pageBody;
     if(UI.page === 'apply') pageBody = renderApplyPage();
+    else if(UI.page === 'refer') pageBody = renderReferPage();
     else if(UI.page === 'schedules') pageBody = renderSchedulesPage();
     else if(UI.page === 'leaderboard') pageBody = renderLeaderboardPage();
     else if(UI.page === 'policies') pageBody = renderPoliciesPage();
@@ -1817,7 +2157,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
       renderNav() +
       renderBanner() +
       pageBody +
-      (UI.error && UI.page !== 'apply' ? '<div class="error-note">' + escapeHtml(UI.error) + '</div>' : '') +
+      (UI.error && UI.page !== 'apply' && UI.page !== 'refer' ? '<div class="error-note">' + escapeHtml(UI.error) + '</div>' : '') +
       (UI.authError ? '<div class="error-note">' + escapeHtml(UI.authError) + '</div>' : '') +
       '<div class="footer-note">Plei Brand Ambassador Program · Phase 1 preview · Phase 2 adds games played, activity tracking, social &amp; affiliate data to every profile.</div>' +
       renderMemberModal() +
@@ -1825,6 +2165,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
       renderImportForm() +
       renderCreditImportModal() +
       renderUsageImportModal() +
+      renderReferralImportForm() +
       renderPolicyForm() +
       renderAuditLog();
     document.getElementById('app').innerHTML = html;
@@ -1956,11 +2297,15 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
           var prevPublic = id ? STATE.members.filter(function(x){ return x.id === id; })[0] : null;
           var prevPrivate = id ? (STATE.membersPrivate[id] || {}) : {};
           var changed = [];
+          var sensitiveNotes = [];
           if(prevPublic){
             Object.keys(data).forEach(function(k){ if(JSON.stringify(prevPublic[k]) !== JSON.stringify(data[k])) changed.push(k); });
             Object.keys(privateData).forEach(function(k){ if(JSON.stringify(prevPrivate[k]) !== JSON.stringify(privateData[k])) changed.push(k); });
+            if(prevPublic.role !== data.role) sensitiveNotes.push('role: ' + (prevPublic.role || '—') + ' -> ' + (data.role || '—'));
+            if(prevPublic.region !== data.region) sensitiveNotes.push('region: ' + (prevPublic.region || '—') + ' -> ' + (data.region || '—'));
           }
-          logAudit(id ? 'update' : 'create', id, data.name, id ? ('changed: ' + (changed.join(', ') || '—')) : 'new member added');
+          var saveNote = id ? ('changed: ' + (changed.join(', ') || '—') + (sensitiveNotes.length ? ' | ' + sensitiveNotes.join('; ') : '')) : 'new member added (role: ' + (data.role || '—') + ', region: ' + (data.region || '—') + ')';
+          logAudit(id ? 'update' : 'create', id, data.name, saveNote);
           UI.adding = false; UI.editingId = null; UI.formBaTypes = []; render();
           saveMember(id || null, data, privateData);
         });
@@ -2093,6 +2438,56 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
         });
       } else if(action === 'apply-again'){
         el.addEventListener('click', function(){ UI.applySubmitted = false; UI.formBaTypes = []; render(); });
+      } else if(action === 'submit-referral'){
+        el.addEventListener('click', function(){
+          var name = document.getElementById('rf-name').value.trim();
+          if(!name){ UI.error = 'Your name is required.'; render(); return; }
+          var codeInput = document.getElementById('rf-code');
+          var data = {
+            referredName: name,
+            referredPhone: document.getElementById('rf-phone').value.trim(),
+            referredEmail: document.getElementById('rf-email').value.trim(),
+            referredCity: document.getElementById('rf-city').value.trim(),
+            notes: document.getElementById('rf-notes').value.trim(),
+            referralCode: UI.referCode || (codeInput ? codeInput.value.trim() : '')
+          };
+          submitReferral(data);
+        });
+      } else if(action === 'refer-again'){
+        el.addEventListener('click', function(){ UI.referSubmitted = false; render(); });
+      } else if(action === 'referral-set-status'){
+        el.addEventListener('click', function(){ updateReferralStatus(el.getAttribute('data-value'), el.getAttribute('data-status')); });
+      } else if(action === 'approve-referral-credit'){
+        el.addEventListener('click', function(){
+          var id = el.getAttribute('data-value');
+          var amtInput = document.getElementById('ref-credit-amt-' + id);
+          approveReferralCredit(id, amtInput ? amtInput.value : 0);
+        });
+      } else if(action === 'export-referral-credits'){
+        el.addEventListener('click', exportReferralCreditsCSV);
+      } else if(action === 'open-referral-import'){
+        el.addEventListener('click', function(){ UI.referralImportOpen = true; UI.referralImportRows = null; UI.referralImportError = ''; render(); });
+      } else if(action === 'close-referral-import'){
+        el.addEventListener('click', function(){ UI.referralImportOpen = false; UI.referralImportRows = null; UI.referralImportError = ''; render(); });
+      } else if(action === 'referral-import-file'){
+        el.addEventListener('change', function(){
+          var file = el.files && el.files[0];
+          if(!file) return;
+          var reader = new FileReader();
+          reader.onload = function(e){
+            var parsed = parseReferralsCSV(String(e.target.result||''));
+            if(parsed.error){ UI.referralImportError = parsed.error; UI.referralImportRows = null; }
+            else { UI.referralImportRows = parsed.rows; UI.referralImportError = ''; }
+            render();
+          };
+          reader.onerror = function(){ UI.referralImportError = 'Could not read that file.'; render(); };
+          reader.readAsText(file);
+        });
+      } else if(action === 'confirm-referral-import'){
+        el.addEventListener('click', function(){
+          if(!UI.referralImportRows) return;
+          importReferrals(UI.referralImportRows);
+        });
       } else if(action === 'add-policy'){
         el.addEventListener('click', function(){ UI.addingPolicy = true; UI.editingPolicyId = null; render(); });
       } else if(action === 'edit-policy'){
