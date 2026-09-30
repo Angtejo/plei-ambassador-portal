@@ -303,6 +303,17 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
 .qa-item + .qa-item{border-top:1px solid var(--border);}
 .qa-q{font-weight:700;font-size:14px;}
 .qa-a{font-size:13.5px;color:var(--text-muted);margin-top:5px;white-space:pre-wrap;line-height:1.6;}
+.journey-clickable{cursor:pointer;border-radius:10px;transition:background .12s ease;margin:0 -10px;padding:14px 10px;}
+.journey-clickable:hover{background:var(--surface-2);}
+.journey-done .journey-title{color:var(--accent);}
+.journey-num-done{background:var(--accent);color:#fff;}
+.progress-track{height:8px;border-radius:999px;background:var(--surface-2);overflow:hidden;}
+.progress-fill{height:100%;background:var(--accent);border-radius:999px;transition:width .2s ease;}
+.checklist-item{display:flex;gap:10px;padding:8px 0;align-items:flex-start;}
+.checklist-item + .checklist-item{border-top:1px solid var(--border);}
+.checklist-box{flex:none;font-size:16px;color:var(--text-muted);line-height:1.4;}
+.checklist-text{font-weight:600;font-size:13.5px;}
+.checklist-note{font-size:12.5px;color:var(--text-muted);margin-top:2px;}
 </style>
 </head>
 <body>
@@ -322,7 +333,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
   var REGION_LABELS = {west:'West', central:'Central', southeast:'Southeast', northeast:'Northeast'};
   var DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   var BASE_BA_TYPES = ['Content Creator','Event Organizer','Photographer','Affiliate Marketer','Adidas Brand Ambassadors','Eleven Brand Ambassadors'];
-  var PAGES = ['home','apply','refer','schedules','leaderboard','policies','credits','resources','interview'];
+  var PAGES = ['home','apply','refer','schedules','leaderboard','policies','credits','resources','interview','journey','checklist','stories','portfolio'];
   var CITY_COORDS = {
     'bay area':[-122.27,37.87],'san francisco':[-122.42,37.77],'los angeles':[-118.24,34.05],'san diego':[-117.16,32.72],
     'phoenix':[-112.07,33.45],'sacramento':[-121.49,38.58],'seattle':[-122.33,47.61],'portland':[-122.68,45.52],
@@ -425,20 +436,26 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     usageHistory: [],
     referrals: [],
     referralCredits: [],
-    content: {journey:[], selection:[], qa:[], resources:[], interview:[]},
+    content: {journey:[], selection:[], qa:[], resources:[], interview:[], checklist:[]},
+    successStories: [],
     schedule: {weekLabel:'This week', days: DAYS, assignments: {}}
   };
-  var LOADED = {regions:false, members:false, schedule:false, baTypes:false, policies:false, content:{journey:false, selection:false, qa:false, resources:false, interview:false}};
-  var CONTENT_KEYS = ['journey','selection','qa','resources','interview'];
+  var LOADED = {regions:false, members:false, schedule:false, baTypes:false, policies:false, successStories:false, journeyProgress:false, content:{journey:false, selection:false, qa:false, resources:false, interview:false, checklist:false}};
+  var CONTENT_KEYS = ['journey','selection','qa','resources','interview','checklist'];
   var BOOTSTRAPPED_CONTENT = false;
   var CONTENT_SEED = {
     journey: [{"title":"1. Discovery","body":"Most ambassadors are already organic soccer organizers or players before they ever hear of Plei — often running their own pickup games on WhatsApp or Discord, or already a regular at Adidas-sponsored free games."},{"title":"2. Application","body":"Apply through the web form or a flyer. The current bar: fulfill at least 2 of 6 role categories — affiliate marketing, social media, event hosting, content creation, community leadership, or corporate partnerships. See How We Select below for the full list."},{"title":"3. First-round screen","body":"Handled by Spencer or the growth team, filtering the player database and incoming applications for fit before scheduling an interview."},{"title":"4. Second-round interview","body":"A conversational, ~20–30 minute interview with Angel. Regional Supervisor candidates get a second round with Spencer as well, and notes from both are compared before a decision is made."},{"title":"5. Decision","body":"Candidates typically hear back by midweek, or no later than the middle of the following week."},{"title":"6. Onboarding call","body":"Role expectations, your WhatsApp group invite, first assignment, equipment, and the content/social requirement are all walked through together. The full checklist lives on the Getting Started page once you're in."},{"title":"7. Active ambassador life","body":"Monthly all-hands calls, the regional WhatsApp community, hosting games, and posting content become the regular rhythm."},{"title":"8. Growth path","body":"The strongest ambassadors move into Regional Supervisor roles or the new Organizer beta program (self-serve game posting) — Sergio Aceves and Jose in Houston are two real examples of that path."},{"title":"9. Offboarding","body":"Can happen for inactivity, not responding to the program agreement, or not meeting expectations. This is one of the areas the program is still actively defining — see Policies for exactly where that stands today."}],
     selection: [{"title":"The application","body":"The public flyer and form ask for 2 of the 6 role categories below. The requirement is intentionally flexible — meet any one or two from the list — though affiliate marketing and social media are the program's main priorities right now:\n\n• Affiliate marketing\n• Social media\n• Event hosting\n• Content creation\n• Corporate partnerships\n• Community leadership\n\nNot sure if you qualify? Apply anyway — see the Q&A below, or reach out and ask."},{"title":"What we look for","body":"• A micro-influencer profile — roughly 500 to 30,000 followers, and comfortable being \"the face\" of a brand online\n• Already organizing or playing soccer independently — we're looking for organic community builders, not passive applicants\n• Proactive by nature, not waiting to be told what to do\n• Work authorization in the U.S. — a hard requirement for anyone who will be paid"},{"title":"The interview process","body":"Brand Ambassador candidates typically go through one interview, about 20–30 minutes, with Angel. Regional Supervisor candidates go through two — a first round with Spencer, a second with Angel — and notes from both rounds are compared before a joint decision. Either way, you'll hear back within about a week."},{"title":"What we're actually evaluating","body":"• People-management or leadership experience — military, retail, engineering leads, or informally organizing your own group all count\n• Honesty about time and bandwidth — this is roughly a 2–4 hour a week role, as an independent contractor, fully remote\n• Comfort being the example on social media — posting, tagging, engaging\n• How you'd handle a teammate who's unmotivated or checked out\n• The size and credibility of your local soccer network\n• Willingness to give real, sometimes critical feedback — supervisors especially are treated as a feedback loop straight to the product team"}],
     qa: [{"title":"What exactly is the Brand Ambassador program?","body":"It's Plei's network of local soccer organizers and community builders who host games, grow the local Plei community, and represent the brand on the ground and on social media. Most applicants apply before fully understanding what the role involves, so if you're reading this — you're already ahead. It's part-time, remote, and built around people who are already doing this kind of thing anyway."},{"title":"Do I get paid, and how much?","body":"It depends on your role and market. Some Adidas-sponsored game hosting comes with a stipend (roughly $30/game). Regional Supervisors are paid a flat $400/month plus $50/month in game credits. Newer Brand Ambassadors are currently in a game-credits model while the program tests a broader stipend structure — ambassadors onboarded under the older model kept their original $15/hour + unlimited free games terms. Full detail is on the Policies page, and we'll be upfront that this varies by region and partnership."},{"title":"Will this lead to a full-time job at Plei?","body":"Not automatically, and we want to be honest about that up front — it's the single most common misconception about this program. This is a part-time, independent-contractor role. That said, ambassadors who go above and beyond have grown into Regional Supervisor roles and the Organizer beta program, and the people building this program started somewhere similar."},{"title":"What if my city doesn't have Adidas or other paid opportunities yet?","body":"Some regions have more sponsor activity than others right now, and that's a real gap we're working on — not every city has an Adidas or McDonald's partnership yet. In the meantime, the biggest lever you have is building your own local community: recruiting players, hosting consistently, and growing your own following. Regions with strong organic communities tend to get first look at new partnerships as they roll out."},{"title":"What do I need to post, and how often?","body":"At minimum: a story at each game you host, tagging @Plei, plus a group photo before kickoff. Keep your profile photo as an actual photo of you (not the default Plei logo) so players recognize you. Engaging with Plei's official posts — likes, comments, shares — is part of the role too."},{"title":"How is attendance and performance tracked?","body":"Every game gets logged in your region's roster sheet — who showed up, who was late, who no-showed — plus a short note on how the game went. This isn't just paperwork: it protects other players' experience and it's what keeps our brand partners (like Adidas) confident in sponsoring games."},{"title":"What equipment do I need to bring?","body":"Bibs/pennies and balls, at minimum, plus arriving early enough to set up and check gear quality. Supply shipments (especially from Adidas) are sometimes delayed, so build in a buffer and flag shortages to your Regional Supervisor early."},{"title":"Can I still play in the games I host?","body":"Yes, but ambassadors and captains supervise first and only fill open roster spots — you shouldn't take priority over paying or waitlisted players."},{"title":"How do I move up — become a Regional Supervisor or Organizer?","body":"Consistency and initiative are what get noticed: reliable hosting, strong content, growing your local community, and giving useful feedback. See Your Journey above for the growth path, and reach out to your Regional Supervisor or Angel/Spencer if you're interested."},{"title":"What happens if I go inactive?","body":"Honestly — this policy is still being finalized, and we'd rather tell you that than pretend otherwise. What's certain today: everyone needs a signed program agreement on file, and non-responders go through a two-email follow-up before being offboarded. A firm inactivity timeline hasn't been set yet. Check the Policies page for the current status."}],
     resources: [{"title":"Your onboarding checklist","body":"This is the same checklist Angel runs on every onboarding call:\n\n1. Confirm work authorization (required to get paid)\n2. Get added to your region's WhatsApp group — the primary tool for communication and scheduling\n3. Learn the roster/check-in system — a shared Google Sheet per region where you log each game's roster, mark present/absent/late, and leave a short game review\n4. Understand the content requirement — a story per game, tagging @Plei, a group photo before kickoff, and a real profile photo\n5. Understand your equipment responsibilities — bibs/balls, arriving early, quality control, cleanup\n6. Set your first shift and confirm your recurring schedule\n7. Get invited to the monthly all-hands call — community updates, product updates, shout-outs, giveaways\n8. If it applies to you, get connected to the Organizer beta program (self-serve game posting)\n9. Ask your Regional Supervisor for a peer example to model — every region has someone who's \"the standard.\""},{"title":"What comp and stipends look like","body":"Compensation varies by role and market — Adidas game hosting, Regional Supervisor pay, and the newer Brand Ambassador model are all a bit different from each other, and some ambassadors are grandfathered into older terms. The full breakdown, including what's still being decided, is on the Policies page — read it there so you're always seeing the current version."},{"title":"Your portal","body":"This site is your dashboard — your region, your team roster, your credits, schedules, and the leaderboard all live here. It replaces the old mix of WhatsApp threads and Notion pages as the single source of truth for the program."},{"title":"Getting help","body":"If something comes up, the escalation path is: you → your Regional Supervisor → Angel or Spencer. Your Regional Supervisor is your first call for day-to-day questions; Angel and Spencer handle anything your supervisor can't resolve."},{"title":"What we're building next","body":"Ambassador feedback directly drives the product roadmap — not just this portal, but Plei itself. Things currently in motion: the check-in feature you're using now, unique QR codes for referrals, player scoring, and tools for the Organizer program. If you have an idea, say something — that's exactly how the last few features got built."},{"title":"Brand assets","body":"Still a gap we're working on closing — a shared logo kit, social post templates, and suggested \"I'm a Plei ambassador\" caption copy aren't formalized yet. Until then, use your best judgment on branding, keep it professional, and check with your Regional Supervisor if you're unsure."}],
-    interview: [{"title":"Opening / logistics — both roles","body":"• Confirm work authorization in the U.S.\n• Explain the time commitment — roughly \"0.25 time,\" 2–4 hrs/week, 1099 independent contractor, fully remote — and ask directly about bandwidth given school, other jobs, or family\n• Ask about existing familiarity with Plei or Adidas games in their city"},{"title":"Core question bank — Brand Ambassador & Regional Supervisor","body":"1. Tell me about your experience managing people, handling communication, or working on/leading a team. (Any leadership evidence counts — military, work, informal group organizing.)\n2. How would you handle a team member or ambassador who isn't fulfilling their responsibilities or isn't engaged?\n3. How would you handle an ambassador who feels they don't have the same opportunities as bigger regions (e.g. Miami/Houston vs. Denver/Kansas City)? — tests empathy and retention thinking.\n4. What keeps you around Plei when there are competing apps and ways to play? — tests genuine passion vs. transactional interest.\n5. Are you comfortable being the example on social media — posting a story, tagging Plei, being visible?\n6. Tell me about your local soccer network/community — how big is it, is it just Plei or other groups too?\n7. What's the soccer culture like in your city — leagues, pickup apps, informal networks?\n8. Do you have any experience with websites, tools, or AI that could help us build out our internal systems? (Regional Supervisor only — our ambassador infrastructure is self-built with AI tools, and supervisors are treated as co-builders.)\n9. What do you think our program or team is missing? What feedback do you have? — deliberately asked every time; supervisors are explicitly a feedback loop to product/engineering.\n10. Close with: Do you have any questions or feedback for me? — always ask, and treat their questions as signal too."},{"title":"Regional Supervisor-specific additions","body":"• Walk through the region's Adidas game logistics — roster checks, stipends, no-shows — and ask how they'd manage it\n• Ask directly about deployment/travel/reliability risk if applicable (e.g. military reserve status)\n• Show them the in-progress supervisor dashboard and gauge their reaction and ideas — this doubles as a product-feedback moment"},{"title":"Interviewer notes & tips","body":"• Prioritize proactive, experienced candidates over passive ones who just want to be told what to do\n• Watch for a common failure pattern: candidates who are motivated at first but disengage after a few weeks — this matters more than onboarding enthusiasm\n• Partnership opportunities (Adidas, McDonald's, etc.) are the single biggest driver of candidate interest — be upfront that not every region has these yet"}]
+    interview: [{"title":"Opening / logistics — both roles","body":"• Confirm work authorization in the U.S.\n• Explain the time commitment — roughly \"0.25 time,\" 2–4 hrs/week, 1099 independent contractor, fully remote — and ask directly about bandwidth given school, other jobs, or family\n• Ask about existing familiarity with Plei or Adidas games in their city"},{"title":"Core question bank — Brand Ambassador & Regional Supervisor","body":"1. Tell me about your experience managing people, handling communication, or working on/leading a team. (Any leadership evidence counts — military, work, informal group organizing.)\n2. How would you handle a team member or ambassador who isn't fulfilling their responsibilities or isn't engaged?\n3. How would you handle an ambassador who feels they don't have the same opportunities as bigger regions (e.g. Miami/Houston vs. Denver/Kansas City)? — tests empathy and retention thinking.\n4. What keeps you around Plei when there are competing apps and ways to play? — tests genuine passion vs. transactional interest.\n5. Are you comfortable being the example on social media — posting a story, tagging Plei, being visible?\n6. Tell me about your local soccer network/community — how big is it, is it just Plei or other groups too?\n7. What's the soccer culture like in your city — leagues, pickup apps, informal networks?\n8. Do you have any experience with websites, tools, or AI that could help us build out our internal systems? (Regional Supervisor only — our ambassador infrastructure is self-built with AI tools, and supervisors are treated as co-builders.)\n9. What do you think our program or team is missing? What feedback do you have? — deliberately asked every time; supervisors are explicitly a feedback loop to product/engineering.\n10. Close with: Do you have any questions or feedback for me? — always ask, and treat their questions as signal too."},{"title":"Regional Supervisor-specific additions","body":"• Walk through the region's Adidas game logistics — roster checks, stipends, no-shows — and ask how they'd manage it\n• Ask directly about deployment/travel/reliability risk if applicable (e.g. military reserve status)\n• Show them the in-progress supervisor dashboard and gauge their reaction and ideas — this doubles as a product-feedback moment"},{"title":"Interviewer notes & tips","body":"• Prioritize proactive, experienced candidates over passive ones who just want to be told what to do\n• Watch for a common failure pattern: candidates who are motivated at first but disengage after a few weeks — this matters more than onboarding enthusiasm\n• Partnership opportunities (Adidas, McDonald's, etc.) are the single biggest driver of candidate interest — be upfront that not every region has these yet"}],
+    checklist: [{"title":"Confirm game location and time","body":"Double-check the roster sheet the day before.","section":"before"},{"title":"Bring soccer ball","body":"","section":"before"},{"title":"Bring bibs / pinnies","body":"","section":"before"},{"title":"Bring phone with enough battery/storage","body":"You'll need it for photos, video, and posting during the game.","section":"before"},{"title":"Review game expectations","body":"Know the play-limit rule and who's supervising vs. playing.","section":"before"},{"title":"Help create a welcoming environment","body":"New players are often nervous — introductions go a long way.","section":"during"},{"title":"Capture photos/videos","body":"","section":"during"},{"title":"Post required story/content","body":"Tag @Plei where applicable.","section":"during"},{"title":"Tag Plei / sponsor if applicable","body":"Adidas or other sponsor tags matter for activation tracking.","section":"during"},{"title":"Upload photos","body":"","section":"after"},{"title":"Submit game recap or success story","body":"A quick note on how it went — great recaps can become featured Success Stories.","section":"after"},{"title":"Confirm participation","body":"Log the roster: present/absent/late.","section":"after"},{"title":"Complete any required program tracking","body":"Adidas or other sponsor-specific reporting if this was a sponsored game.","section":"after"}]
   };
   var POLICY_SEED = [{"title":"Compensation — Brand Ambassador (legacy)","body":"$15/hour plus unlimited free games, for ambassadors onboarded under the old model. Grandfathered — not offered to new ambassadors.","status":"grandfathered"},{"title":"Compensation — Brand Ambassador (new)","body":"Game credits only during the current test period; a stipend model that varies by market is still being worked out. Rebecca has raised the question of whether strict performance goals are fair to ask for without pay attached — this is an open discussion, not settled policy.","status":"pending"},{"title":"Compensation — Adidas game host stipend","body":"Roughly $30/game (about $15/hour equivalent).","status":"active"},{"title":"Compensation — Regional Supervisor","body":"A flat $400/month (1099) plus $50/month in game credits, for a workload expectation of about 2–4 hours/week (\"0.25 time\").","status":"active"},{"title":"Grandfathering","body":"Ambassadors onboarded under the old benefits structure keep those terms. New ambassadors join under the current, leaner terms. This was decided mid-2025 and applies program-wide.","status":"active"},{"title":"Work authorization","body":"Required for anyone being paid — confirmed verbally on every interview and onboarding call. This is non-negotiable.","status":"active"},{"title":"Requirement structure","body":"Applicants must fulfill 2 of 6 categories: affiliate marketing, social media, event hosting, content creation, community leadership, or corporate partnerships. This structure is active but still being refined as the program learns what actually predicts a good ambassador.","status":"active"},{"title":"Content/social requirement","body":"Post at least one story per game hosted and tag @Plei; engage (like, comment, share) with official Plei posts; keep a real profile photo. Already enforced in Houston, and being rolled out more broadly.","status":"active"},{"title":"Roster/check-in accountability","body":"Every game's roster must be logged in the shared Google Sheet — present/absent/late, plus a short game review. This is required for all Adidas-sponsored games and protects the program's credibility with brand partners.","status":"active"},{"title":"Play-limit rule (Adidas games)","body":"Players shouldn't play more than twice a month at free Adidas games, to spread access fairly. The policy exists, but there's no technical enforcement mechanism yet — for now this relies on ambassadors applying it themselves.","status":"active"},{"title":"Ambassador play priority","body":"Ambassadors and captains supervise first, and only fill open roster spots. They shouldn't take priority over paying or waitlisted players.","status":"active"},{"title":"Game-credit usage (captains)","body":"Proposal: use credits at public parks first, and only use private-facility credits once a region's public-park requirements are met. This has been discussed but isn't fully rolled out yet.","status":"pending"},{"title":"Inactivity / offboarding threshold","body":"There's no fixed threshold today. A \"2 weeks inactive = offboarded\" rule was floated in discussion but never adopted. This is an acknowledged gap in the program that we're actively working to close — don't assume a specific timeline applies until this is updated.","status":"pending"},{"title":"Signed agreement requirement","body":"All ambassadors and captains must sign the program agreement. Non-responders get an escalating two-email sequence before being offboarded. A number of ambassadors still have an outstanding signature as of late September 2026 — if that might be you, check with your Regional Supervisor.","status":"active"},{"title":"Liability / last-minute play","body":"Ambassadors playing on last-minute notice need sign-off from Ops/Legal, for liability reasons. Handled case-by-case.","status":"active"},{"title":"Referral / affiliate goals","body":"Proposal: 3 new referrals per month via a personal QR code per ambassador, eventually tied to a commission model. This is a discussion in progress, not a live requirement yet.","status":"pending"},{"title":"Personal-brand conflicts","body":"Ambassadors with an existing personal brand can request contract revisions. These are reviewed case-by-case by Rebecca and legal, with real precedent already set.","status":"active"},{"title":"Budget","body":"Program merch and incentive budget is roughly $4,500. A request to raise it to $5,500 has been made but not yet approved — this is a real constraint on what we can offer in giveaways and swag right now.","status":"active"}];
+  var JOURNEY_STAGES = [{"id":"welcome","title":"Welcome / Onboarding","body":"You're in. Get added to your region's WhatsApp group and make sure you've confirmed work authorization with your Regional Supervisor."},{"id":"profile","title":"Complete Your Profile","body":"Make sure your city, region, and contact info are correct, and set a real profile photo (not the default Plei logo) so players recognize you."},{"id":"learn","title":"Learn the Program","body":"Read through the Resource Library — guidelines, expectations, and policies — so you know what's expected before your first game."},{"id":"prepare","title":"Prepare for Your First Game","body":"Review the Game-Day Checklist: what to bring, what to post, and how check-in works."},{"id":"attend","title":"Attend / Host Games","body":"Show up, help run a great game, and log attendance in your region's roster sheet."},{"id":"content","title":"Create Content","body":"Post a story at each game you host, tag @Plei, and keep engaging with official Plei posts."},{"id":"submit","title":"Submit Photos / Stories","body":"Share standout moments with your Regional Supervisor — great ones can become a featured Success Story."},{"id":"portfolio","title":"Build Your Ambassador Portfolio","body":"Your involvement builds up automatically — check My Portfolio to see your profile as it grows."},{"id":"recognition","title":"Earn Recognition / Milestones","body":"Consistency gets noticed. Strong ambassadors get featured, recognized, and considered for growth roles."},{"id":"growing","title":"Continue Growing Within the Program","body":"Ask your Regional Supervisor about the Organizer beta program or the Regional Supervisor path when you're ready for more."}];
+  var MY_MEMBER_ID = '';
+  var MY_JOURNEY_PROGRESS = null;
+  var JOURNEY_PROGRESS_UNSUB = null;
   var CURRENT_USER = null;
   var IS_PLEI_USER = false;
   var MY_ACCESS = null;
@@ -454,6 +471,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
   var SCOPED_PRIVATE_UNSUB = null;
   var REFERRALS_UNSUB = null;
   var REFERRAL_CREDITS_UNSUB = null;
+  var SUCCESS_STORIES_UNSUB = null;
   var BOOTSTRAPPED_TYPES = false;
   var BOOTSTRAPPED_REFCODES = false;
   var QR_CACHE = {};
@@ -469,7 +487,8 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     referCode: referCodeFromHash(), referSubmitted:false,
     referralImportOpen:false, referralImportRows:null, referralImportError:'', referralImporting:false,
     grantAccessOpen:false, grantAccessMemberId:'', grantAccessEmail:'', grantAccessError:'', grantAccessSaving:false,
-    contentEditKey:'', contentEditId:''
+    contentEditKey:'', contentEditId:'',
+    resourceSearch:'', addingStory:false, editingStoryId:null, storyError:'', storyDraftTags:[], editingBio:false, bioSaving:false
   };
   window.addEventListener('hashchange', function(){
     UI.page = pageFromHash(); UI.selectedId = null; UI.error = ''; UI.formBaTypes = []; UI.filterPanelOpen = false;
@@ -580,6 +599,32 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
         return MY_ACCESS;
       });
     }).catch(function(){ MY_ACCESS = null; return null; });
+  }
+
+  function resolveMyMemberId(user){
+    if(JOURNEY_PROGRESS_UNSUB){ JOURNEY_PROGRESS_UNSUB(); JOURNEY_PROGRESS_UNSUB = null; }
+    MY_MEMBER_ID = ''; MY_JOURNEY_PROGRESS = null; LOADED.journeyProgress = false;
+    if(!user || !user.email) return;
+    var key = normalizeEmailKey(user.email);
+    db.collection('email_index').doc(key).get().then(function(idxDoc){
+      if(CURRENT_USER !== user) return;
+      if(!idxDoc.exists){ LOADED.journeyProgress = true; render(); return; }
+      MY_MEMBER_ID = idxDoc.data().memberId || '';
+      if(!MY_MEMBER_ID){ LOADED.journeyProgress = true; render(); return; }
+      JOURNEY_PROGRESS_UNSUB = db.collection('journey_progress').doc(MY_MEMBER_ID).onSnapshot(function(doc){
+        MY_JOURNEY_PROGRESS = doc.exists ? doc.data() : {completed: []};
+        LOADED.journeyProgress = true;
+        render();
+      }, function(){ LOADED.journeyProgress = true; render(); });
+      render();
+    }).catch(function(){ LOADED.journeyProgress = true; render(); });
+  }
+  function toggleJourneyStep(stepId){
+    if(!MY_MEMBER_ID) return;
+    var completed = (MY_JOURNEY_PROGRESS && MY_JOURNEY_PROGRESS.completed) ? MY_JOURNEY_PROGRESS.completed.slice() : [];
+    var idx = completed.indexOf(stepId);
+    if(idx === -1) completed.push(stepId); else completed.splice(idx, 1);
+    db.collection('journey_progress').doc(MY_MEMBER_ID).set({completed: completed, updatedAt: firebase.firestore.FieldValue.serverTimestamp()}, {merge:true}).catch(function(){});
   }
 
   function signIn(){
@@ -705,6 +750,21 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
         }
         render();
       });
+    }
+    resolveMyMemberId(user);
+    if(SUCCESS_STORIES_UNSUB){ SUCCESS_STORIES_UNSUB(); SUCCESS_STORIES_UNSUB = null; }
+    STATE.successStories = []; LOADED.successStories = false;
+    if(user){
+      var storiesQuery = IS_PLEI_USER ? db.collection('success_stories') : db.collection('success_stories').where('visibility', 'in', ['featured','public']);
+      SUCCESS_STORIES_UNSUB = storiesQuery.onSnapshot(function(snap){
+        var next = [];
+        snap.forEach(function(doc){ next.push(Object.assign({id: doc.id}, doc.data())); });
+        STATE.successStories = next;
+        LOADED.successStories = true;
+        render();
+      }, function(){ LOADED.successStories = true; render(); });
+    } else {
+      LOADED.successStories = true;
     }
     render();
   });
@@ -920,7 +980,9 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
         var t = String(item.title||'').trim().toLowerCase();
         if(existing[t]) return;
         var ref = db.collection('content_' + key).doc();
-        batch.set(ref, {title: item.title, body: item.body, order: i});
+        var doc = {title: item.title, body: item.body, order: i};
+        if(item.section) doc.section = item.section;
+        batch.set(ref, doc);
         wrote = true;
       });
     });
@@ -1448,6 +1510,18 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
   }
   function deleteContent(key, id){ withSaving(db.collection('content_' + key).doc(id).delete()); }
 
+  function saveStory(id, data){
+    if(id){ withSaving(db.collection('success_stories').doc(id).set(data, {merge:true})); }
+    else { withSaving(db.collection('success_stories').add(data)); }
+  }
+  function deleteStory(id){ withSaving(db.collection('success_stories').doc(id).delete()); }
+  function saveBio(memberId, bio){
+    UI.bioSaving = true; render();
+    db.collection('members').doc(memberId).set({bio: bio}, {merge:true}).then(function(){
+      UI.bioSaving = false; UI.editingBio = false; render();
+    }).catch(function(){ UI.bioSaving = false; render(); });
+  }
+
   function computeStats(){
     var active = STATE.members.filter(function(m){ return m.status !== 'inactive'; });
     var totalEvents = active.reduce(function(s,m){ return s + (m.eventsWorked||0); }, 0);
@@ -1563,15 +1637,22 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
       '</div>';
   }
 
+  function isStaffTier(){
+    return IS_PLEI_USER || (MY_ACCESS && (MY_ACCESS.role === 'supervisor' || MY_ACCESS.role === 'captain' || MY_ACCESS.role === 'pm'));
+  }
   function renderNav(){
     var links = hasPortalAccess() ? [
       {key:'home', label:'Home'},
+      {key:'journey', label:'My Journey'},
+      {key:'checklist', label:'Game-Day Checklist'},
+      {key:'resources', label:'Resources'},
+      {key:'stories', label:'Success Stories'},
+      {key:'portfolio', label:'My Portfolio'},
       {key:'apply', label:'Become an Ambassador'},
       {key:'refer', label:'Refer & Earn'},
       {key:'schedules', label:'Schedules'},
       {key:'leaderboard', label:'Leaderboard'},
-      {key:'policies', label:'Policies'},
-      {key:'resources', label:'Getting Started'}
+      {key:'policies', label:'Policies'}
     ] : [
       {key:'apply', label:'Become an Ambassador'},
       {key:'refer', label:'Refer & Earn'}
@@ -2053,9 +2134,11 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     journey: {heading:'Your Journey', sub:'How ambassadors actually get here, stage by stage.'},
     selection: {heading:'How We Select', sub:'What we look for, and how the interview process works.'},
     qa: {heading:'Common Questions', sub:'What applicants ask us most.'},
-    resources: {heading:'Getting Started', sub:'Your onboarding checklist and program resources.'},
-    interview: {heading:'Interview Guide', sub:'Internal — the real question bank Angel and Spencer use, plus interviewer notes.'}
+    resources: {heading:'Resource Library', sub:'Guidelines, expectations, training material, and best practices — organized and searchable.'},
+    interview: {heading:'Interview Guide', sub:'Internal — the real question bank Angel and Spencer use, plus interviewer notes.'},
+    checklist: {heading:'Game-Day Checklist', sub:'What to bring and do, before, during, and after every game.'}
   };
+  var CHECKLIST_SECTIONS = [{key:'before', label:'Before the Game'}, {key:'during', label:'During the Game'}, {key:'after', label:'After the Game'}];
   function renderContentBlocks(key){
     var items = (STATE.content[key]||[]).slice().sort(function(a,b){ return (a.order||0) - (b.order||0); });
     var canEdit = IS_PLEI_USER;
@@ -2073,10 +2156,12 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     if(!UI.contentEditKey) return '';
     var key = UI.contentEditKey;
     var editing = UI.contentEditId ? (STATE.content[key]||[]).filter(function(x){ return x.id === UI.contentEditId; })[0] : null;
-    var b = editing || {title:'', body:'', order: (STATE.content[key]||[]).length};
+    var b = editing || {title:'', body:'', order: (STATE.content[key]||[]).length, section: 'before', category: ''};
     var labels = CONTENT_LABELS[key] || {heading:'Content'};
-    var titleLabel = key === 'qa' ? 'Question' : 'Title';
-    var bodyLabel = key === 'qa' ? 'Answer' : 'Body';
+    var titleLabel = key === 'qa' ? 'Question' : (key === 'checklist' ? 'Item' : 'Title');
+    var bodyLabel = key === 'qa' ? 'Answer' : (key === 'checklist' ? 'Note (optional)' : 'Body');
+    var sectionField = key === 'checklist' ? ('<div class="form-field"><label>When</label><select id="ct-section">' + CHECKLIST_SECTIONS.map(function(s){ return '<option value="' + s.key + '"' + ((b.section||'before')===s.key?' selected':'') + '>' + s.label + '</option>'; }).join('') + '</select></div>') : '';
+    var categoryField = key === 'resources' ? ('<div class="form-field"><label>Category</label><input id="ct-category" type="text" placeholder="e.g. Social Media, Brand Guidelines" value="' + escapeHtml(b.category||'') + '"></div>') : '';
     return '' +
       '<div class="overlay" data-action="close-content-form">' +
         '<div class="modal" onclick="event.stopPropagation()">' +
@@ -2084,7 +2169,8 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
             '<h2 style="margin-top:0;">' + (editing ? 'Edit' : 'Add') + ' — ' + escapeHtml(labels.heading) + '</h2>' +
             '<div class="form-grid">' +
               '<div class="form-field full"><label>' + titleLabel + '</label><input id="ct-title" type="text" value="' + escapeHtml(b.title) + '"></div>' +
-              '<div class="form-field full"><label>' + bodyLabel + '</label><textarea id="ct-body" style="min-height:160px;">' + escapeHtml(b.body) + '</textarea></div>' +
+              '<div class="form-field full"><label>' + bodyLabel + '</label><textarea id="ct-body" style="min-height:120px;">' + escapeHtml(b.body) + '</textarea></div>' +
+              sectionField + categoryField +
               '<div class="form-field"><label>Order</label><input id="ct-order" type="number" value="' + (b.order||0) + '"></div>' +
             '</div>' +
             '<div class="modal-actions">' +
@@ -2101,9 +2187,184 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
   }
 
   function renderResourcesPage(){
-    var blocks = renderContentBlocks('resources');
-    return '<div class="page-header"><div class="section-head"><h1 style="margin:0;">Getting Started</h1>' + blocks.addBtn + '</div><p class="sub">' + escapeHtml(CONTENT_LABELS.resources.sub) + '</p></div>' +
-      (blocks.cards || '<div class="empty-note">Nothing here yet.</div>');
+    var canEdit = IS_PLEI_USER;
+    var items = (STATE.content.resources||[]).slice().sort(function(a,b){ return (a.order||0) - (b.order||0); });
+    var q = UI.resourceSearch.trim().toLowerCase();
+    if(q) items = items.filter(function(b){ return (b.title||'').toLowerCase().indexOf(q) !== -1 || (b.body||'').toLowerCase().indexOf(q) !== -1 || (b.category||'').toLowerCase().indexOf(q) !== -1; });
+    var groups = {}; var order = [];
+    items.forEach(function(b){
+      var cat = b.category || 'General';
+      if(!groups[cat]){ groups[cat] = []; order.push(cat); }
+      groups[cat].push(b);
+    });
+    var sectionsHtml = order.map(function(cat){
+      var cards = groups[cat].map(function(b){
+        var actions = canEdit ? '<div class="policy-actions">' +
+          '<button class="btn secondary" data-action="edit-content" data-key="resources" data-value="' + b.id + '">Edit</button>' +
+          '<button class="btn danger" data-action="delete-content" data-key="resources" data-value="' + b.id + '">Delete</button>' +
+        '</div>' : '';
+        return '<div class="policy-card"><div class="policy-title">' + escapeHtml(b.title||'') + '</div><div class="policy-body">' + escapeHtml(b.body||'') + '</div>' + actions + '</div>';
+      }).join('');
+      return '<div class="section-label" style="margin-top:22px;">' + escapeHtml(cat) + '</div>' + cards;
+    }).join('');
+    var addBtn = canEdit ? '<button class="btn secondary" data-action="add-content" data-key="resources">+ Add resource</button>' : '';
+    return '<div class="page-header"><div class="section-head"><h1 style="margin:0;">Resource Library</h1>' + addBtn + '</div><p class="sub">' + escapeHtml(CONTENT_LABELS.resources.sub) + '</p></div>' +
+      '<input class="search-input" style="margin-bottom:6px;" type="text" placeholder="Search resources…" value="' + escapeHtml(UI.resourceSearch) + '" data-action="resource-search">' +
+      (sectionsHtml || '<div class="empty-note">' + (q ? 'No resources match "' + escapeHtml(UI.resourceSearch) + '".' : 'Nothing here yet.') + '</div>');
+  }
+
+  function renderChecklistPage(){
+    var canEdit = IS_PLEI_USER;
+    var items = (STATE.content.checklist||[]).slice().sort(function(a,b){ return (a.order||0) - (b.order||0); });
+    var addBtn = canEdit ? '<button class="btn secondary" data-action="add-content" data-key="checklist">+ Add item</button>' : '';
+    var sectionsHtml = CHECKLIST_SECTIONS.map(function(s){
+      var rows = items.filter(function(b){ return (b.section||'before') === s.key; }).map(function(b){
+        var actions = canEdit ? '<div class="policy-actions" style="margin-top:4px;">' +
+          '<button class="btn secondary" data-action="edit-content" data-key="checklist" data-value="' + b.id + '">Edit</button>' +
+          '<button class="btn danger" data-action="delete-content" data-key="checklist" data-value="' + b.id + '">Delete</button>' +
+        '</div>' : '';
+        return '<div class="checklist-item"><span class="checklist-box">☐</span><div><div class="checklist-text">' + escapeHtml(b.title||'') + '</div>' + (b.body ? '<div class="checklist-note">' + escapeHtml(b.body) + '</div>' : '') + actions + '</div></div>';
+      }).join('');
+      return '<div class="card card-pad" style="margin-bottom:18px;"><div class="section-label" style="margin-top:0;">' + escapeHtml(s.label) + '</div>' + (rows || '<div class="empty-note">Nothing added yet.</div>') + '</div>';
+    }).join('');
+    return '<div class="page-header"><div class="section-head"><h1 style="margin:0;">Game-Day Checklist</h1>' + addBtn + '</div><p class="sub">' + escapeHtml(CONTENT_LABELS.checklist.sub) + '</p></div>' + sectionsHtml;
+  }
+
+  function renderJourneyPage(){
+    if(!hasPortalAccess()) return '';
+    if(!LOADED.journeyProgress){
+      return '<div class="page-header"><h1>My Journey</h1></div><div class="empty-note">Loading…</div>';
+    }
+    if(!MY_MEMBER_ID){
+      return '<div class="page-header"><h1>My Journey</h1><p class="sub">Your personal onboarding &amp; progress tracker.</p></div>' +
+        '<div class="internal-note">We couldn\'t find a roster profile linked to your sign-in email, so we can\'t track personal progress here yet. Ask your Regional Supervisor or Program Manager to confirm your email is on your roster record.</div>';
+    }
+    var completed = (MY_JOURNEY_PROGRESS && MY_JOURNEY_PROGRESS.completed) || [];
+    var doneCount = JOURNEY_STAGES.filter(function(s){ return completed.indexOf(s.id) !== -1; }).length;
+    var pct = Math.round((doneCount / JOURNEY_STAGES.length) * 100);
+    var stepsHtml = JOURNEY_STAGES.map(function(s, i){
+      var done = completed.indexOf(s.id) !== -1;
+      return '<div class="journey-step journey-clickable' + (done ? ' journey-done' : '') + '" data-action="toggle-journey-step" data-value="' + s.id + '">' +
+        '<div class="journey-num' + (done ? ' journey-num-done' : '') + '">' + (done ? '✓' : (i+1)) + '</div>' +
+        '<div><div class="journey-title">' + escapeHtml(s.title) + '</div><div class="journey-body">' + escapeHtml(s.body) + '</div></div>' +
+      '</div>';
+    }).join('');
+    var nextStep = JOURNEY_STAGES.filter(function(s){ return completed.indexOf(s.id) === -1; })[0];
+    return '<div class="page-header"><h1>My Journey</h1><p class="sub">What to do next, from onboarding to becoming an active ambassador.</p></div>' +
+      '<div class="card card-pad" style="margin-bottom:22px;">' +
+        '<div class="section-head" style="margin-bottom:8px;"><h2 style="font-size:16px;margin:0;">' + doneCount + ' of ' + JOURNEY_STAGES.length + ' steps completed</h2><span class="badge status-active">' + pct + '%</span></div>' +
+        '<div class="progress-track"><div class="progress-fill" style="width:' + pct + '%;"></div></div>' +
+        (nextStep ? '<div class="sub" style="margin-top:12px;margin-bottom:0;">What do I do now? <strong>' + escapeHtml(nextStep.title) + '</strong> — ' + escapeHtml(nextStep.body) + '</div>' : '<div class="sub" style="margin-top:12px;margin-bottom:0;">You\'ve completed every step here — nice work. Keep an eye on Resources and the Game-Day Checklist as you keep going.</div>') +
+      '</div>' +
+      '<div class="card card-pad">' + stepsHtml + '</div>';
+  }
+
+  var STORY_TAGS = ['Hosting','Community','Content','Leadership','Adidas','Recruitment','Tournament','Special Event'];
+  var STORY_VISIBILITY_LABEL = {featured:'Featured', public:'Public', internal:'Internal only'};
+  function renderStoriesPage(){
+    var addBtn = IS_PLEI_USER ? '<button class="btn" data-action="add-story">+ Add story</button>' : '';
+    var sorted = (STATE.successStories||[]).slice().sort(function(a,b){
+      if((a.visibility==='featured') !== (b.visibility==='featured')) return a.visibility==='featured' ? -1 : 1;
+      return (b.date||'').localeCompare(a.date||'');
+    });
+    var cards = sorted.map(function(s){
+      var m = STATE.members.filter(function(x){ return x.id === s.memberId; })[0];
+      var name = s.memberName || (m && m.name) || 'Ambassador';
+      var region = s.region || (m && regionName(m.region)) || '';
+      var tagsHtml = (s.tags||[]).map(function(t){ return '<span class="badge status-grandfathered" style="margin-right:4px;">' + escapeHtml(t) + '</span>'; }).join('');
+      var visBadge = IS_PLEI_USER ? '<span class="badge ' + (s.visibility==='featured'?'status-active':s.visibility==='internal'?'status-pending':'status-grandfathered') + '">' + (STORY_VISIBILITY_LABEL[s.visibility]||'Public') + '</span>' : (s.visibility==='featured' ? '<span class="badge status-active">Featured</span>' : '');
+      var actions = IS_PLEI_USER ? '<div class="policy-actions">' +
+        '<button class="btn secondary" data-action="edit-story" data-value="' + s.id + '">Edit</button>' +
+        '<button class="btn danger" data-action="delete-story" data-value="' + s.id + '">Delete</button>' +
+      '</div>' : '';
+      return '<div class="policy-card"><div class="policy-title">' + escapeHtml(s.title||'') + visBadge + '</div>' +
+        '<div class="log-meta">' + escapeHtml(name) + (region ? ' · ' + escapeHtml(region) : '') + (s.date ? ' · ' + escapeHtml(s.date) : '') + '</div>' +
+        '<div class="policy-body" style="margin-top:8px;">' + escapeHtml(s.body||'') + '</div>' +
+        (tagsHtml ? '<div style="margin-top:8px;">' + tagsHtml + '</div>' : '') +
+        (s.photoUrl ? '<div class="log-meta" style="margin-top:8px;"><a href="' + escapeHtml(s.photoUrl) + '" target="_blank" rel="noopener">Photo link</a></div>' : '') +
+        (s.videoUrl ? '<div class="log-meta"><a href="' + escapeHtml(s.videoUrl) + '" target="_blank" rel="noopener">Video link</a></div>' : '') +
+        actions + '</div>';
+    }).join('');
+    return '<div class="page-header"><div class="section-head"><h1 style="margin:0;">Success Stories</h1>' + addBtn + '</div><p class="sub">Ambassadors doing great things across the program.</p></div>' +
+      (cards || '<div class="empty-note">No success stories published yet.</div>');
+  }
+  function renderStoryForm(){
+    if(!UI.addingStory && !UI.editingStoryId) return '';
+    var editing = UI.editingStoryId ? STATE.successStories.filter(function(x){ return x.id === UI.editingStoryId; })[0] : null;
+    var s = editing || {memberId:'', title:'', body:'', date: new Date().toISOString().slice(0,10), tags:[], photoUrl:'', videoUrl:'', visibility:'public'};
+    var sorted = STATE.members.filter(function(m){ return m.status !== 'inactive'; }).sort(function(a,b){ return (a.name||'').localeCompare(b.name||''); });
+    var memberOpts = '<option value="">— Not linked to a specific ambassador —</option>' + sorted.map(function(m){
+      return '<option value="' + m.id + '"' + (s.memberId===m.id?' selected':'') + '>' + escapeHtml(m.name) + '</option>';
+    }).join('');
+    var visOpts = ['featured','public','internal'].map(function(v){ return '<option value="' + v + '"' + ((s.visibility||'public')===v?' selected':'') + '>' + STORY_VISIBILITY_LABEL[v] + '</option>'; }).join('');
+    var tagChecks = STORY_TAGS.map(function(t){
+      return '<label class="batype-check"><input type="checkbox" data-action="toggle-story-tag" data-value="' + escapeHtml(t) + '"' + (UI.storyDraftTags.indexOf(t)!==-1?' checked':'') + '> ' + escapeHtml(t) + '</label>';
+    }).join('');
+    return '' +
+      '<div class="overlay" data-action="close-story-form">' +
+        '<div class="modal" onclick="event.stopPropagation()">' +
+          '<div class="modal-body">' +
+            '<h2 style="margin-top:0;">' + (editing ? 'Edit' : 'Add') + ' Success Story</h2>' +
+            '<div class="form-grid">' +
+              '<div class="form-field full"><label>Ambassador</label><select id="st-member">' + memberOpts + '</select></div>' +
+              '<div class="form-field full"><label>Title</label><input id="st-title" type="text" value="' + escapeHtml(s.title) + '"></div>' +
+              '<div class="form-field full"><label>Story</label><textarea id="st-body" style="min-height:120px;">' + escapeHtml(s.body) + '</textarea></div>' +
+              '<div class="form-field"><label>Date</label><input id="st-date" type="date" value="' + escapeHtml(s.date||'') + '"></div>' +
+              '<div class="form-field"><label>Visibility</label><select id="st-visibility">' + visOpts + '</select></div>' +
+              '<div class="form-field"><label>Photo link (optional)</label><input id="st-photo" type="text" placeholder="https://…" value="' + escapeHtml(s.photoUrl||'') + '"></div>' +
+              '<div class="form-field"><label>Video link (optional)</label><input id="st-video" type="text" placeholder="https://…" value="' + escapeHtml(s.videoUrl||'') + '"></div>' +
+              '<div class="form-field full"><label>Tags</label><div class="batype-grid" id="st-tags">' + tagChecks + '</div></div>' +
+            '</div>' +
+            (UI.storyError ? '<div class="error-note">' + escapeHtml(UI.storyError) + '</div>' : '') +
+            '<div class="modal-actions">' +
+              '<button class="btn" data-action="save-story" data-value="' + (editing ? editing.id : '') + '">Save</button>' +
+              '<button class="btn secondary" data-action="close-story-form">Cancel</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  function renderPortfolioPage(){
+    if(!LOADED.journeyProgress){
+      return '<div class="page-header"><h1>My Portfolio</h1></div><div class="empty-note">Loading…</div>';
+    }
+    if(!MY_MEMBER_ID){
+      return '<div class="page-header"><h1>My Portfolio</h1></div>' +
+        '<div class="internal-note">We couldn\'t find a roster profile linked to your sign-in email, so there\'s no portfolio to show yet. Ask your Regional Supervisor or Program Manager to confirm your email is on your roster record.</div>';
+    }
+    var m = STATE.members.filter(function(x){ return x.id === MY_MEMBER_ID; })[0];
+    if(!m) return '<div class="page-header"><h1>My Portfolio</h1></div><div class="empty-note">Roster profile not found.</div>';
+    var completed = (MY_JOURNEY_PROGRESS && MY_JOURNEY_PROGRESS.completed) || [];
+    var pct = Math.round((completed.length / JOURNEY_STAGES.length) * 100);
+    var myStories = (STATE.successStories||[]).filter(function(s){ return s.memberId === MY_MEMBER_ID; });
+    var storiesHtml = myStories.map(function(s){
+      return '<div class="policy-card"><div class="policy-title">' + escapeHtml(s.title||'') + '</div><div class="log-meta">' + escapeHtml(s.date||'') + '</div><div class="policy-body" style="margin-top:6px;">' + escapeHtml(s.body||'') + '</div></div>';
+    }).join('');
+    var bioHtml = UI.editingBio ?
+      ('<textarea id="bio-edit" style="min-height:90px;width:100%;">' + escapeHtml(m.bio||'') + '</textarea>' +
+       '<div class="modal-actions" style="margin-top:8px;"><button class="btn" data-action="save-bio"' + (UI.bioSaving?' disabled':'') + '>' + (UI.bioSaving?'Saving…':'Save bio') + '</button><button class="btn secondary" data-action="cancel-edit-bio">Cancel</button></div>') :
+      ('<p class="sub" style="margin:6px 0 0;">' + (m.bio ? escapeHtml(m.bio) : 'No bio yet.') + '</p>' +
+       '<button class="btn secondary" style="margin-top:8px;" data-action="edit-bio">' + (m.bio?'Edit bio':'Add a bio') + '</button>');
+    return '' +
+      '<div class="page-header"><h1>My Portfolio</h1><p class="sub">Your record of involvement with Plei.</p></div>' +
+      '<div class="card card-pad" style="margin-bottom:20px;">' +
+        '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">' +
+          '<div class="journey-num" style="width:56px;height:56px;font-size:20px;">' + escapeHtml(initials(m.name)) + '</div>' +
+          '<div><div style="font-weight:800;font-size:18px;">' + escapeHtml(m.name||'') + '</div>' +
+            '<div class="sub" style="margin:2px 0 0;">' + escapeHtml(ROLE_LABELS[m.role]||'') + (m.region ? ' · ' + escapeHtml(regionName(m.region)) : '') + (m.city ? ' · ' + escapeHtml(m.city) : '') + '</div>' +
+            (m.startDate ? '<div class="log-meta">Ambassador since ' + escapeHtml(m.startDate) + '</div>' : '') +
+          '</div>' +
+        '</div>' +
+        bioHtml +
+      '</div>' +
+      '<div class="card card-pad" style="margin-bottom:20px;">' +
+        '<div class="section-label" style="margin-top:0;">My Impact</div>' +
+        '<div class="stat-row" style="margin-top:0;"><div class="stat-tile"><div class="stat-num tabular">' + pct + '%</div><div class="stat-label">Journey Complete</div></div>' +
+        '<div class="stat-tile"><div class="stat-num tabular">' + myStories.length + '</div><div class="stat-label">Success Stories</div></div></div>' +
+        '<div class="sub" style="margin-top:12px;margin-bottom:0;">Games attended, games hosted, and content stats are coming in a future update, once monthly activity tracking is built.</div>' +
+      '</div>' +
+      (myStories.length ? ('<div class="section-label">My Success Stories</div>' + storiesHtml) : '');
   }
 
   function renderInterviewPage(){
@@ -2523,6 +2784,10 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     else if(UI.page === 'credits') pageBody = renderCreditsPage();
     else if(UI.page === 'resources') pageBody = renderResourcesPage();
     else if(UI.page === 'interview') pageBody = renderInterviewPage();
+    else if(UI.page === 'journey') pageBody = renderJourneyPage();
+    else if(UI.page === 'checklist') pageBody = renderChecklistPage();
+    else if(UI.page === 'stories') pageBody = renderStoriesPage();
+    else if(UI.page === 'portfolio') pageBody = renderPortfolioPage();
     else pageBody = renderHomePage();
     var html = '' +
       renderTopBar() +
@@ -2541,6 +2806,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
       renderGrantAccessForm() +
       renderPolicyForm() +
       renderContentForm() +
+      renderStoryForm() +
       renderAuditLog();
     document.getElementById('app').innerHTML = html;
     bindHandlers();
@@ -2910,9 +3176,63 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
             body: document.getElementById('ct-body').value.trim(),
             order: parseInt(document.getElementById('ct-order').value, 10) || 0
           };
+          var sectionEl = document.getElementById('ct-section');
+          if(sectionEl) data.section = sectionEl.value;
+          var categoryEl = document.getElementById('ct-category');
+          if(categoryEl) data.category = categoryEl.value.trim();
           UI.contentEditKey = ''; UI.contentEditId = ''; render();
           saveContent(key, id || null, data);
         });
+      } else if(action === 'toggle-journey-step'){
+        el.addEventListener('click', function(){ toggleJourneyStep(el.getAttribute('data-value')); });
+      } else if(action === 'resource-search'){
+        el.addEventListener('input', function(){ UI.resourceSearch = el.value; render(); });
+      } else if(action === 'add-story'){
+        el.addEventListener('click', function(){ UI.addingStory = true; UI.editingStoryId = null; UI.storyDraftTags = []; UI.storyError = ''; render(); });
+      } else if(action === 'edit-story'){
+        el.addEventListener('click', function(){
+          var id = el.getAttribute('data-value');
+          var s = STATE.successStories.filter(function(x){ return x.id === id; })[0];
+          UI.editingStoryId = id; UI.addingStory = false; UI.storyDraftTags = (s && s.tags) ? s.tags.slice() : []; UI.storyError = ''; render();
+        });
+      } else if(action === 'delete-story'){
+        el.addEventListener('click', function(){ deleteStory(el.getAttribute('data-value')); });
+      } else if(action === 'close-story-form'){
+        el.addEventListener('click', function(){ UI.addingStory = false; UI.editingStoryId = null; UI.storyError = ''; render(); });
+      } else if(action === 'toggle-story-tag'){
+        el.addEventListener('change', function(){
+          var t = el.getAttribute('data-value');
+          var i = UI.storyDraftTags.indexOf(t);
+          if(el.checked && i === -1) UI.storyDraftTags.push(t); else if(!el.checked && i !== -1) UI.storyDraftTags.splice(i, 1);
+        });
+      } else if(action === 'save-story'){
+        el.addEventListener('click', function(){
+          var id = el.getAttribute('data-value');
+          var title = document.getElementById('st-title').value.trim();
+          if(!title){ UI.storyError = 'Give the story a title.'; render(); return; }
+          var memberId = document.getElementById('st-member').value;
+          var m = memberId ? STATE.members.filter(function(x){ return x.id === memberId; })[0] : null;
+          var data = {
+            memberId: memberId || '',
+            memberName: m ? m.name : '',
+            region: m ? regionName(m.region) : '',
+            title: title,
+            body: document.getElementById('st-body').value.trim(),
+            date: document.getElementById('st-date').value || '',
+            visibility: document.getElementById('st-visibility').value || 'public',
+            photoUrl: document.getElementById('st-photo').value.trim(),
+            videoUrl: document.getElementById('st-video').value.trim(),
+            tags: UI.storyDraftTags.slice()
+          };
+          UI.addingStory = false; UI.editingStoryId = null; UI.storyError = ''; render();
+          saveStory(id || null, data);
+        });
+      } else if(action === 'edit-bio'){
+        el.addEventListener('click', function(){ UI.editingBio = true; render(); });
+      } else if(action === 'cancel-edit-bio'){
+        el.addEventListener('click', function(){ UI.editingBio = false; render(); });
+      } else if(action === 'save-bio'){
+        el.addEventListener('click', function(){ saveBio(MY_MEMBER_ID, document.getElementById('bio-edit').value.trim()); });
       }
     });
   }
