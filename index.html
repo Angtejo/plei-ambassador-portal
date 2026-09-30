@@ -249,6 +249,47 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
 @keyframes modalIn{from{opacity:0;transform:translateY(8px) scale(.98);}to{opacity:1;transform:translateY(0) scale(1);}}
 .overlay{animation:fadeIn .12s ease;}
 .modal{animation:modalIn .16s ease;}
+
+.gate-wrap{position:fixed;inset:0;z-index:500;background:radial-gradient(circle at 30% 20%,#0D3D2B 0%,#07271F 55%,#04140F 100%);overflow:hidden;display:flex;align-items:center;justify-content:center;font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;}
+.gate-cards-field{position:absolute;inset:0;overflow:hidden;pointer-events:none;}
+.gate-card{position:absolute;display:flex;align-items:center;gap:10px;background:rgba(13,61,43,0.55);border:1px solid rgba(0,230,118,0.18);border-radius:14px;padding:10px 14px;backdrop-filter:blur(1px);animation-name:gateFloat;animation-timing-function:ease-in-out;animation-iteration-count:infinite;will-change:transform;}
+.gate-card .gate-card-avatar{width:34px;height:34px;border-radius:9px;background:rgba(0,230,118,0.16);color:#49DE7F;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex:none;}
+.gate-card .gate-card-name{color:#FFFFFF;font-weight:700;font-size:12.5px;line-height:1.3;white-space:nowrap;}
+.gate-card .gate-card-role{color:#8FD9A8;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;}
+@keyframes gateFloat{
+  0%{transform:translate(0,0) rotate(0deg);}
+  25%{transform:translate(14px,-18px) rotate(1.2deg);}
+  50%{transform:translate(-6px,10px) rotate(-1deg);}
+  75%{transform:translate(-16px,-8px) rotate(0.8deg);}
+  100%{transform:translate(0,0) rotate(0deg);}
+}
+.gate-fade-edge{position:absolute;inset:0;background:radial-gradient(circle at 50% 50%,rgba(7,39,31,0.25) 0%,rgba(7,39,31,0.75) 60%,rgba(4,20,15,0.95) 100%);pointer-events:none;}
+.gate-panel{position:relative;z-index:2;width:100%;max-width:440px;margin:24px;background:#0D3D2B;border:1px solid rgba(0,230,118,0.25);border-radius:24px;padding:40px 34px 34px;box-shadow:0 24px 64px rgba(0,0,0,0.45);text-align:center;}
+.gate-logo-row{display:flex;align-items:center;justify-content:center;gap:9px;margin-bottom:22px;}
+.gate-logo-mark{width:32px;height:32px;border-radius:9px;background:#00E676;display:flex;align-items:center;justify-content:center;font-weight:800;color:#07271F;font-size:16px;}
+.gate-logo-name{color:#FFFFFF;font-weight:800;font-size:15px;letter-spacing:0.3px;}
+.gate-eyebrow{display:inline-block;background:rgba(0,230,118,0.14);color:#49DE7F;font-weight:700;font-size:11px;padding:5px 13px;border-radius:999px;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:16px;}
+.gate-title{color:#FFFFFF;font-size:24px;font-weight:800;margin:0 0 10px;line-height:1.3;}
+.gate-sub{color:#B9E8C9;font-size:13.5px;line-height:1.6;margin:0 0 26px;}
+.gate-signin-btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;width:100%;background:#00E676;color:#07271F;border:none;font-weight:800;font-size:14.5px;padding:14px 18px;border-radius:999px;cursor:pointer;}
+.gate-signin-btn:hover{background:#49DE7F;}
+.gate-signin-btn svg{flex:none;}
+.gate-spinner{width:22px;height:22px;border-radius:50%;border:3px solid rgba(0,230,118,0.25);border-top-color:#00E676;margin:6px auto 0;animation:gateSpin 0.8s linear infinite;}
+@keyframes gateSpin{to{transform:rotate(360deg);}}
+.gate-denied{background:rgba(224,80,64,0.12);border:1px solid rgba(224,80,64,0.35);color:#F4B6AC;border-radius:14px;padding:14px 16px;font-size:13px;line-height:1.6;margin-bottom:20px;text-align:left;}
+.gate-denied b{color:#FFFFFF;}
+.gate-divider{display:flex;align-items:center;gap:12px;color:#4F8C6A;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin:26px 0 18px;}
+.gate-divider::before,.gate-divider::after{content:'';flex:1;height:1px;background:rgba(0,230,118,0.18);}
+.gate-cta-row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;}
+.gate-cta{flex:1;min-width:140px;background:rgba(0,230,118,0.08);border:1px solid rgba(0,230,118,0.3);color:#FFFFFF;text-decoration:none;font-weight:700;font-size:12.5px;padding:12px 14px;border-radius:14px;text-align:center;}
+.gate-cta:hover{background:rgba(0,230,118,0.16);color:#FFFFFF;}
+.gate-cta-sub{display:block;color:#8FD9A8;font-weight:600;font-size:10.5px;margin-top:3px;text-transform:none;letter-spacing:0;}
+.gate-footnote{color:#4F8C6A;font-size:11px;margin-top:22px;line-height:1.6;}
+@media (max-width:520px){
+  .gate-panel{padding:32px 22px 26px;border-radius:18px;}
+  .gate-title{font-size:20px;}
+  .gate-card{display:none;}
+}
 </style>
 </head>
 <body>
@@ -377,6 +418,9 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
   var CURRENT_USER = null;
   var IS_PLEI_USER = false;
   var MY_ACCESS = null;
+  var AUTH_RESOLVED = false;
+  var ACCESS_CHECKED = false;
+  var GATE_CARDS_CACHE = null;
   var SCHEDULE_UNSUB = null;
   var PRIVATE_UNSUB = null;
   var AUDIT_UNSUB = null;
@@ -399,7 +443,8 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     creditImportOpen:false, creditImportRows:null, creditImportUnmatched:null, creditImportMonth:'', creditImportExpiration:'', creditImportError:'', creditImporting:false,
     usageImportOpen:false, usageImportRows:null, usageImportUnmatched:null, usageImportMonth:'', usageImportError:'', usageImporting:false,
     referCode: referCodeFromHash(), referSubmitted:false,
-    referralImportOpen:false, referralImportRows:null, referralImportError:'', referralImporting:false
+    referralImportOpen:false, referralImportRows:null, referralImportError:'', referralImporting:false,
+    grantAccessOpen:false, grantAccessMemberId:'', grantAccessEmail:'', grantAccessError:'', grantAccessSaving:false
   };
   window.addEventListener('hashchange', function(){
     UI.page = pageFromHash(); UI.selectedId = null; UI.error = ''; UI.formBaTypes = []; UI.filterPanelOpen = false;
@@ -420,6 +465,81 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     if((MY_ACCESS.role === 'supervisor' || MY_ACCESS.role === 'captain') && MY_ACCESS.region && regionForMember(memberId) === MY_ACCESS.region) return true;
     if(MY_ACCESS.memberId === memberId) return true;
     return false;
+  }
+
+  function hasPortalAccess(){
+    return IS_PLEI_USER || !!MY_ACCESS;
+  }
+
+  function gateMode(){
+    if(!AUTH_RESOLVED) return 'checking';
+    if(!CURRENT_USER) return 'signed-out';
+    if(!ACCESS_CHECKED) return 'checking';
+    if(hasPortalAccess()) return 'authorized';
+    return 'denied';
+  }
+
+  function getGateCards(){
+    if(GATE_CARDS_CACHE) return GATE_CARDS_CACHE;
+    var pool = STATE.members.filter(function(m){ return m.status !== 'inactive' && m.name; });
+    if(!pool.length) return [];
+    var arr = pool.slice();
+    for(var i=arr.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=arr[i]; arr[i]=arr[j]; arr[j]=t; }
+    var count = Math.min(18, arr.length);
+    var cards = [];
+    for(var k=0;k<count;k++){
+      var m = arr[k];
+      cards.push({
+        name: m.name,
+        role: ROLE_LABELS[m.role] || '',
+        top: Math.round(Math.random()*88),
+        left: Math.round(Math.random()*86),
+        duration: (14 + Math.random()*12).toFixed(1),
+        delay: (Math.random()*-20).toFixed(1),
+        rot: (Math.random()*6-3).toFixed(1)
+      });
+    }
+    GATE_CARDS_CACHE = cards;
+    return cards;
+  }
+
+  function renderGatePage(){
+    var mode = gateMode();
+    var cards = getGateCards();
+    var cardsHtml = cards.map(function(c){
+      var style = 'top:' + c.top + '%;left:' + c.left + '%;animation-duration:' + c.duration + 's;animation-delay:' + c.delay + 's;transform:rotate(' + c.rot + 'deg);';
+      return '<div class="gate-card" style="' + style + '"><div class="gate-card-avatar">' + escapeHtml(initials(c.name)) + '</div><div><div class="gate-card-name">' + escapeHtml(c.name) + '</div><div class="gate-card-role">' + escapeHtml(c.role) + '</div></div></div>';
+    }).join('');
+    var body;
+    if(mode === 'checking'){
+      body = '<div class="gate-spinner"></div>';
+    } else if(mode === 'denied'){
+      body = '<div class="gate-denied">Signed in as <b>' + escapeHtml(CURRENT_USER.email) + '</b>, but that account doesn\'t have portal access yet. If you\'re Plei staff or a regional supervisor who should have access, contact your Program Manager to get added.</div>' +
+        '<button class="gate-signin-btn" data-action="sign-out">Try a different account</button>';
+    } else {
+      body = '<button class="gate-signin-btn" data-action="sign-in"><svg width="18" height="18" viewBox="0 0 18 18"><path fill="#07271F" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.9c1.7-1.56 2.7-3.87 2.7-6.62z"/><path fill="#07271F" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.26c-.8.54-1.83.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.94v2.33A9 9 0 0 0 9 18z"/><path fill="#07271F" d="M3.95 10.7A5.4 5.4 0 0 1 3.67 9c0-.59.1-1.16.28-1.7V4.97H.94A9 9 0 0 0 0 9c0 1.45.35 2.83.94 4.03z"/><path fill="#07271F" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0A9 9 0 0 0 .94 4.97L3.95 7.3C4.66 5.17 6.65 3.58 9 3.58z"/></svg>Sign in with Google</button>';
+    }
+    var title = mode === 'denied' ? 'Almost there' : 'Team access only';
+    var sub = mode === 'checking' ? 'Checking your access…' : (mode === 'denied' ? 'This portal holds ambassador contact info, schedules and credits — access is limited to approved Plei team members.' : 'Sign in with a @plei.com Google account, or the Google account your Program Manager granted you, to see the roster, schedules, leaderboard and credits.');
+    return '' +
+      '<div class="gate-wrap">' +
+        '<div class="gate-cards-field">' + cardsHtml + '</div>' +
+        '<div class="gate-fade-edge"></div>' +
+        '<div class="gate-panel">' +
+          '<div class="gate-logo-row"><div class="gate-logo-mark">P</div><div class="gate-logo-name">Plei</div></div>' +
+          '<span class="gate-eyebrow">Ambassador Portal</span>' +
+          '<h1 class="gate-title">' + title + '</h1>' +
+          '<p class="gate-sub">' + sub + '</p>' +
+          body +
+          (UI.authError ? '<div class="error-note" style="color:#F4B6AC;">' + escapeHtml(UI.authError) + '</div>' : '') +
+          '<div class="gate-divider">Not on the team yet?</div>' +
+          '<div class="gate-cta-row">' +
+            '<a class="gate-cta" href="#apply">Join the team<span class="gate-cta-sub">Apply to become an ambassador</span></a>' +
+            '<a class="gate-cta" href="#refer">Get referred<span class="gate-cta-sub">Send us a friend</span></a>' +
+          '</div>' +
+          '<div class="gate-footnote">Your data stays private — only signed-in Plei team members can view ambassador profiles.</div>' +
+        '</div>' +
+      '</div>';
   }
 
   function bootstrapAccess(user){
@@ -449,9 +569,11 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
   function signOutUser(){ auth.signOut(); }
 
   auth.onAuthStateChanged(function(user){
+    AUTH_RESOLVED = true;
     CURRENT_USER = user;
     IS_PLEI_USER = isPleiEmail(user);
     MY_ACCESS = null;
+    ACCESS_CHECKED = !user || IS_PLEI_USER;
     if(SCHEDULE_UNSUB){ SCHEDULE_UNSUB(); SCHEDULE_UNSUB = null; }
     if(PRIVATE_UNSUB){ PRIVATE_UNSUB(); PRIVATE_UNSUB = null; }
     if(AUDIT_UNSUB){ AUDIT_UNSUB(); AUDIT_UNSUB = null; }
@@ -538,6 +660,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     if(!IS_PLEI_USER && user){
       bootstrapAccess(user).then(function(access){
         if(CURRENT_USER !== user) return;
+        ACCESS_CHECKED = true;
         if(!access){ render(); return; }
         if(access.role === 'pm'){
           SCOPED_PRIVATE_UNSUB = db.collection('members_private').onSnapshot(function(snap){
@@ -1350,6 +1473,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
     var authHtml;
     if(CURRENT_USER){
       authHtml = '<span class="sub" style="margin:0;">' + escapeHtml(CURRENT_USER.email) + '</span>' +
+        (IS_PLEI_USER ? '<button class="auth-btn" data-action="open-grant-access">Grant access</button>' : '') +
         (IS_PLEI_USER ? '<button class="auth-btn" data-action="open-audit">Activity log</button>' : '') +
         '<button class="auth-btn" data-action="sign-out">Sign out</button>';
     } else {
@@ -1367,13 +1491,16 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
   }
 
   function renderNav(){
-    var links = [
+    var links = hasPortalAccess() ? [
       {key:'home', label:'Home'},
       {key:'apply', label:'Become an Ambassador'},
       {key:'refer', label:'Refer & Earn'},
       {key:'schedules', label:'Schedules'},
       {key:'leaderboard', label:'Leaderboard'},
       {key:'policies', label:'Policies'}
+    ] : [
+      {key:'apply', label:'Become an Ambassador'},
+      {key:'refer', label:'Refer & Earn'}
     ];
     if(IS_PLEI_USER) links.push({key:'credits', label:'Credits'});
     var html = links.map(function(l){
@@ -1393,7 +1520,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
       return '<div class="readonly-banner warn"><span>Signed in as ' + escapeHtml(CURRENT_USER.email) + ', but we couldn\'t match that email to a roster record, so you\'re seeing the public view. Contact your Program Manager if that seems wrong.</span>' +
         '<button class="auth-btn" data-action="sign-out">Sign out</button></div>';
     }
-    return '<div class="readonly-banner">You\'re viewing the public roster. Plei ambassadors and team members: sign in with Google using the email on file to see your own contact info and credits (supervisors and captains also see their region\'s roster).</div>';
+    return '';
   }
 
   function renderGlance(){
@@ -1811,7 +1938,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
 
   function renderAuditLog(){
     if(!UI.auditOpen) return '';
-    var actionLabel = {create:'added', update:'updated', delete:'removed', import:'ran a bulk import', 'import-credits':'imported game credits', 'export-credits':'generated a monthly credits feed', 'import-usage':'imported Hex usage data', 'referral-status':'updated a referral', 'referral-credit':'approved a referral credit', 'export-referral-credits':'exported referral credits', 'import-referrals':'imported historical referrals'};
+    var actionLabel = {create:'added', update:'updated', delete:'removed', import:'ran a bulk import', 'import-credits':'imported game credits', 'export-credits':'generated a monthly credits feed', 'import-usage':'imported Hex usage data', 'referral-status':'updated a referral', 'referral-credit':'approved a referral credit', 'export-referral-credits':'exported referral credits', 'import-referrals':'imported historical referrals', 'grant-access':'granted portal access'};
     var rows = (STATE.auditLog||[]).map(function(e){
       var when = (e.editedAt && e.editedAt.toDate) ? e.editedAt.toDate().toLocaleString() : 'just now';
       var label = actionLabel[e.action] || e.action;
@@ -1968,6 +2095,58 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
             '<h2 style="margin-top:0;">Import historical referrals</h2>' +
             '<div class="sub" style="margin-bottom:14px;">Column names are a best guess at the Airtable export — if the file doesn\'t match, ask Angel to confirm the real header names and we\'ll adjust.</div>' +
             body +
+          '</div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  function grantAccess(memberId, email){
+    var key = normalizeEmailKey(email);
+    if(!memberId){ UI.grantAccessError = 'Pick a team member first.'; render(); return; }
+    if(!key || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(key)){ UI.grantAccessError = 'Enter a valid email address.'; render(); return; }
+    UI.grantAccessSaving = true; UI.grantAccessError = ''; render();
+    db.collection('email_index').doc(key).get().then(function(doc){
+      if(doc.exists && doc.data().memberId !== memberId){
+        var other = STATE.members.filter(function(m){ return m.id === doc.data().memberId; })[0];
+        var e = new Error('taken'); e.code = 'taken'; e.name2 = other ? other.name : 'another member';
+        throw e;
+      }
+      var batch = db.batch();
+      writeEmailIndex(batch, memberId, email);
+      return batch.commit();
+    }).then(function(){
+      var m = STATE.members.filter(function(x){ return x.id === memberId; })[0];
+      logAudit('grant-access', memberId, m ? m.name : '', 'Granted portal sign-in to ' + key);
+      UI.grantAccessSaving = false; UI.grantAccessOpen = false; UI.grantAccessMemberId = ''; UI.grantAccessEmail = '';
+      render();
+    }).catch(function(err){
+      UI.grantAccessSaving = false;
+      UI.grantAccessError = (err && err.code === 'taken') ? ('That email already grants access to ' + err.name2 + '. Remove it there first if you want to reassign it.') : 'Could not grant access — please try again.';
+      render();
+    });
+  }
+
+  function renderGrantAccessForm(){
+    if(!UI.grantAccessOpen) return '';
+    var sorted = STATE.members.filter(function(m){ return m.status !== 'inactive'; }).sort(function(a,b){ return (a.name||'').localeCompare(b.name||''); });
+    var memberOpts = '<option value="">Choose a team member…</option>' + sorted.map(function(m){
+      return '<option value="' + m.id + '"' + (UI.grantAccessMemberId===m.id?' selected':'') + '>' + escapeHtml(m.name) + ' — ' + escapeHtml(ROLE_LABELS[m.role]||'') + (m.region ? ' · ' + escapeHtml(regionName(m.region)) : '') + '</option>';
+    }).join('');
+    return '' +
+      '<div class="overlay" data-action="close-grant-access">' +
+        '<div class="modal" onclick="event.stopPropagation()">' +
+          '<div class="modal-body">' +
+            '<h2 style="margin-top:0;">Grant portal access</h2>' +
+            '<div class="sub" style="margin-bottom:14px;">For regional supervisors or captains who don\'t have a @plei.com email. Link any Google account (their personal Gmail works) to a roster profile — signing in with that address gives them their normal role-based view.</div>' +
+            '<div class="form-grid">' +
+              '<div class="form-field full"><label>Team member</label><select id="grant-member">' + memberOpts + '</select></div>' +
+              '<div class="form-field full"><label>Google email to grant</label><input id="grant-email" type="email" placeholder="name@gmail.com" value="' + escapeHtml(UI.grantAccessEmail) + '"></div>' +
+            '</div>' +
+            (UI.grantAccessError ? '<div class="error-note">' + escapeHtml(UI.grantAccessError) + '</div>' : '') +
+            '<div class="modal-actions">' +
+              '<button class="btn" data-action="confirm-grant-access"' + (UI.grantAccessSaving?' disabled':'') + '>' + (UI.grantAccessSaving?'Granting…':'Grant access') + '</button>' +
+              '<button class="btn secondary" data-action="close-grant-access">Cancel</button>' +
+            '</div>' +
           '</div>' +
         '</div>' +
       '</div>';
@@ -2144,6 +2323,11 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
 
   function render(){
     ensureReferralCodes();
+    if(UI.page !== 'apply' && UI.page !== 'refer' && !hasPortalAccess()){
+      document.getElementById('app').innerHTML = renderGatePage();
+      bindHandlers();
+      return;
+    }
     var pageBody;
     if(UI.page === 'apply') pageBody = renderApplyPage();
     else if(UI.page === 'refer') pageBody = renderReferPage();
@@ -2166,6 +2350,7 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
       renderCreditImportModal() +
       renderUsageImportModal() +
       renderReferralImportForm() +
+      renderGrantAccessForm() +
       renderPolicyForm() +
       renderAuditLog();
     document.getElementById('app').innerHTML = html;
@@ -2487,6 +2672,16 @@ h1{font-size:28px;font-weight:800;margin:10px 0 2px;text-wrap:balance;}
         el.addEventListener('click', function(){
           if(!UI.referralImportRows) return;
           importReferrals(UI.referralImportRows);
+        });
+      } else if(action === 'open-grant-access'){
+        el.addEventListener('click', function(){ UI.grantAccessOpen = true; UI.grantAccessMemberId = ''; UI.grantAccessEmail = ''; UI.grantAccessError = ''; render(); });
+      } else if(action === 'close-grant-access'){
+        el.addEventListener('click', function(){ UI.grantAccessOpen = false; UI.grantAccessError = ''; render(); });
+      } else if(action === 'confirm-grant-access'){
+        el.addEventListener('click', function(){
+          var memberId = document.getElementById('grant-member').value;
+          var email = document.getElementById('grant-email').value;
+          grantAccess(memberId, email);
         });
       } else if(action === 'add-policy'){
         el.addEventListener('click', function(){ UI.addingPolicy = true; UI.editingPolicyId = null; render(); });
